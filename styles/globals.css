@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0a;
+  --bg2: #111;
+  --bg3: #1a1a1a;
+  --bg4: #222;
+  --accent: #c8ff00;
+  --accent2: #00ff87;
+  --text: #f0f0f0;
+  --muted: #555;
+  --muted2: #2a2a2a;
+  --radius: 14px;
+  --rsm: 8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
