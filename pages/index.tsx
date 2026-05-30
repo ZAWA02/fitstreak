@@ -23,8 +23,8 @@ const BADGES = [
 ]
 const EVENT_COLORS = ['#c8ff00','#f472b6','#60a5fa','#fbbf24','#a78bfa','#f97316','#34d399','#22d3ee','#ff6b6b']
 
-interface SetRow { w: string; r: string; done: boolean }
-interface Exercise { id: string; name: string; sets: SetRow[] }
+interface SetRow { w: string; r: string; done: boolean; time?: string; dist?: string }
+interface Exercise { id: string; name: string; sets: SetRow[]; mode: 'strength' | 'cardio' }
 interface WorkoutRecord { id: string; date: string; muscle: string; total_sets: number; total_volume: number }
 interface PR { exercise_name: string; max_weight: number }
 interface CalEvent { id: string; date: string; title: string; memo?: string; color: string }
@@ -349,7 +349,7 @@ export default function Home() {
                   {ev.memo&&<div style={{fontSize:12,color:'#666',marginBottom:8}}>📝 {ev.memo}</div>}
                 </div>
               ))}
-              <button className="btn" onClick={()=>{setExercises([{id:Math.random().toString(),name:'',sets:[{w:'',r:'',done:false}]}]);setTab('log')}}>▶ START WORKOUT</button>
+              <button className="btn" onClick={()=>{setExercises([{id:Math.random().toString(),name:'',sets:[{w:'',r:'',done:false}],mode:'strength'}]);setTab('log')}}>▶ START WORKOUT</button>
             </div>
           )}
           <button className="btn-ghost" onClick={()=>setTab('calendar')}>📅 カレンダーで予定を管理</button>
@@ -454,36 +454,82 @@ export default function Home() {
           </div>
           {exercises.map((ex,ei)=>(
             <div key={ex.id} className="card">
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              {/* 種目名 */}
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
                 <input value={ex.name} onChange={e=>setExercises(exs=>exs.map((x,xi)=>xi===ei?{...x,name:e.target.value}:x))}
                   placeholder="種目名を入力..." className="text-inp" style={{flex:1,fontSize:13}}/>
-                {prs.find(p=>p.exercise_name===ex.name)&&<span style={{fontSize:10,padding:'2px 7px',borderRadius:20,background:'rgba(200,255,0,0.08)',color:'#c8ff00',whiteSpace:'nowrap'}}>PR {prs.find(p=>p.exercise_name===ex.name)!.max_weight}kg</span>}
               </div>
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead><tr>
-                  <th style={{color:'#999',fontWeight:500,fontSize:11,padding:'4px 4px',textAlign:'center',letterSpacing:'0.05em'}}>SET</th>
-                  <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center',letterSpacing:'0.05em'}}>KG</th>
-                  <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center',letterSpacing:'0.05em'}}>REPS</th>
-                  <th/>
-                </tr></thead>
-                <tbody>
+              {/* モード切替 */}
+              <div style={{display:'flex',gap:6,marginBottom:12}}>
+                <button onClick={()=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,mode:'strength',sets:[{w:'',r:'',done:false}]}:ex2))}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:'none',background:ex.mode==='strength'?'#c8ff00':'#1e1e1e',color:ex.mode==='strength'?'#000':'#666',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  💪 筋トレ
+                </button>
+                <button onClick={()=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,mode:'cardio',sets:[{w:'',r:'',done:false,time:'',dist:''}]}:ex2))}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:'none',background:ex.mode==='cardio'?'#22d3ee':'#1e1e1e',color:ex.mode==='cardio'?'#000':'#666',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  🏃 有酸素
+                </button>
+              </div>
+
+              {ex.mode==='strength'?(
+                <>
+                  {prs.find(p=>p.exercise_name===ex.name)&&(
+                    <div style={{fontSize:11,color:'#c8ff00',marginBottom:8}}>🏆 PR: {prs.find(p=>p.exercise_name===ex.name)!.max_weight}kg</div>
+                  )}
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead><tr>
+                      <th style={{color:'#999',fontWeight:500,fontSize:11,padding:'4px',textAlign:'center'}}>SET</th>
+                      <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center'}}>KG</th>
+                      <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center'}}>REPS</th>
+                      <th/>
+                    </tr></thead>
+                    <tbody>
+                      {ex.sets.map((s,i)=>(
+                        <tr key={i}>
+                          <td style={{textAlign:'center',color:'#555',padding:3}}>{i+1}</td>
+                          <td style={{padding:3,textAlign:'center'}}><input className="inp" type="number" placeholder="60" value={s.w} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,w:e.target.value}:s2)}:ex2))}/></td>
+                          <td style={{padding:3,textAlign:'center'}}><input className="inp" type="number" placeholder="10" value={s.r} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,r:e.target.value}:s2)}:ex2))}/></td>
+                          <td style={{textAlign:'center',padding:3}}>
+                            <button className={`done-circle ${s.done?'on':''}`} onClick={()=>{
+                              setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,done:!s2.done}:s2)}:ex2))
+                              if(!s.done&&!swRunning){setSwTotal(swMs);setSwRunning(true)}
+                            }}>{s.done&&'✓'}</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <button onClick={()=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:[...ex2.sets,{w:'',r:'',done:false}]}:ex2))}
+                    style={{fontSize:11,color:'#c8ff00',background:'none',border:'none',cursor:'pointer',padding:'5px 0',marginTop:3,fontFamily:"'DM Sans'"}}>+ ADD SET</button>
+                </>
+              ):(
+                <>
                   {ex.sets.map((s,i)=>(
-                    <tr key={i}>
-                      <td style={{textAlign:'center',color:'#444',padding:3}}>{i+1}</td>
-                      <td style={{padding:3,textAlign:'center'}}><input className="inp" type="number" placeholder="60" value={s.w} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,w:e.target.value}:s2)}:ex2))}/></td>
-                      <td style={{padding:3,textAlign:'center'}}><input className="inp" type="number" placeholder="10" value={s.r} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,r:e.target.value}:s2)}:ex2))}/></td>
-                      <td style={{textAlign:'center',padding:3}}>
-                        <button className={`done-circle ${s.done?'on':''}`} onClick={()=>{
+                    <div key={i} style={{marginBottom:12}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:10,alignItems:'flex-end'}}>
+                        <div>
+                          <div style={{fontSize:10,color:'#999',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>時間（分）</div>
+                          <input type="number" placeholder="30" value={s.time||''} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,time:e.target.value}:s2)}:ex2))}
+                            style={{width:'100%',textAlign:'center',fontSize:16,padding:'8px',border:'0.5px solid #333',borderRadius:8,background:'#1e1e1e',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,color:'#999',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>距離（km）</div>
+                          <input type="number" placeholder="5.0" step="0.1" value={s.dist||''} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,dist:e.target.value}:s2)}:ex2))}
+                            style={{width:'100%',textAlign:'center',fontSize:16,padding:'8px',border:'0.5px solid #333',borderRadius:8,background:'#1e1e1e',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
+                        </div>
+                        <button className={`done-circle ${s.done?'on':''}`} style={{marginBottom:2,flexShrink:0}} onClick={()=>{
                           setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,done:!s2.done}:s2)}:ex2))
-                          if(!s.done&&!swRunning){setSwTotal(swMs);setSwRunning(true)}
                         }}>{s.done&&'✓'}</button>
-                      </td>
-                    </tr>
+                      </div>
+                      {s.time&&s.dist&&parseFloat(s.dist||'0')>0&&parseFloat(s.time||'0')>0&&(
+                        <div style={{fontSize:11,color:'#22d3ee',marginTop:6,padding:'5px 8px',background:'rgba(34,211,238,0.08)',borderRadius:6}}>
+                          ⚡ ペース: {(parseFloat(s.time||'0')/parseFloat(s.dist||'1')).toFixed(1)} 分/km　|　速度: {(parseFloat(s.dist||'0')/(parseFloat(s.time||'1')/60)).toFixed(1)} km/h
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
-              <button onClick={()=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:[...ex2.sets,{w:'',r:'',done:false}]}:ex2))}
-                style={{fontSize:11,color:'#c8ff00',background:'none',border:'none',cursor:'pointer',padding:'5px 0',marginTop:3,fontFamily:"'DM Sans'"}}>+ ADD SET</button>
+                </>
+              )}
             </div>
           ))}
 
@@ -530,7 +576,7 @@ export default function Home() {
 
           <div className="add-row">
             <input value={newExName} onChange={e=>setNewExName(e.target.value)} placeholder="種目を追加..."/>
-            <button onClick={()=>{if(!newExName.trim())return;setExercises(exs=>[...exs,{id:Math.random().toString(),name:newExName.trim(),sets:[{w:'',r:'',done:false}]}]);setNewExName('')}}>+</button>
+            <button onClick={()=>{if(!newExName.trim())return;setExercises(exs=>[...exs,{id:Math.random().toString(),name:newExName.trim(),sets:[{w:'',r:'',done:false}],mode:'strength'}]);setNewExName('')}}>+</button>
           </div>
           <button className="btn" onClick={completeWorkout}>🏆 COMPLETE WORKOUT</button>
         </div>
