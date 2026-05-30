@@ -61,6 +61,11 @@ export default function Home() {
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
   const [isAlarm, setIsAlarm] = useState(false)
+  const [friends, setFriends] = useState<any[]>([])
+  const [friendRequests, setFriendRequests] = useState<any[]>([])
+  const [searchUsername, setSearchUsername] = useState('')
+  const [searchResult, setSearchResult] = useState<any>(null)
+  const [searchMsg, setSearchMsg] = useState('')
   const [gpsTracking, setGpsTracking] = useState<string|null>(null) // exercise id being tracked
   const [gpsDistance, setGpsDistance] = useState<Record<string,number>>({}) // exId -> meters
   const [gpsWatchId, setGpsWatchId] = useState<number|null>(null)
@@ -146,6 +151,8 @@ export default function Home() {
     if (workouts) { setHistory(workouts); setTodayDone(workouts.some((w:any)=>w.date===todayKey)) }
     if (prData) setPrs(prData)
     if (badges) setEarnedBadges(badges.map((b:any)=>b.badge_id))
+    // load friends
+    await loadFriends(uid)
     setLoading(false)
   }
 
@@ -200,6 +207,65 @@ export default function Home() {
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
   // stopwatch colors
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
+  async function loadFriends(uid: string) {
+    // 承認済みフレンド
+    const { data: fs } = await supabase
+      .from('friendships')
+      .select('*, requester:requester_id(id,username,streak), receiver:receiver_id(id,username,streak)')
+      .or(`requester_id.eq.${uid},receiver_id.eq.${uid}`)
+      .eq('status','accepted')
+    if (fs) {
+      const list = fs.map((f:any) => {
+        const friend = f.requester_id === uid ? f.receiver : f.requester
+        return { ...friend, friendshipId: f.id }
+      })
+      setFriends(list)
+    }
+    // 受信したリクエスト
+    const { data: reqs } = await supabase
+      .from('friendships')
+      .select('*, requester:requester_id(id,username,streak)')
+      .eq('receiver_id', uid)
+      .eq('status','pending')
+    if (reqs) setFriendRequests(reqs)
+  }
+
+  async function searchFriend() {
+    if (!searchUsername.trim()) return
+    setSearchMsg('')
+    setSearchResult(null)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id,username,streak')
+      .eq('username', searchUsername.trim())
+      .single()
+    if (!data) { setSearchMsg('ユーザーが見つかりません'); return }
+    if (data.id === user?.id) { setSearchMsg('自分自身は追加できません'); return }
+    setSearchResult(data)
+  }
+
+  async function sendFriendRequest(toId: string) {
+    if (!user) return
+    const { error } = await supabase.from('friendships').insert({
+      requester_id: user.id, receiver_id: toId, status: 'pending'
+    })
+    if (error) { setSearchMsg('すでにリクエスト済みです'); return }
+    setSearchMsg('フレンドリクエストを送りました！')
+    setSearchResult(null)
+    setSearchUsername('')
+  }
+
+  async function acceptFriend(friendshipId: string, uid: string) {
+    await supabase.from('friendships').update({status:'accepted'}).eq('id', friendshipId)
+    setFriendRequests(prev => prev.filter(r => r.id !== friendshipId))
+    await loadFriends(uid)
+  }
+
+  async function rejectFriend(friendshipId: string) {
+    await supabase.from('friendships').delete().eq('id', friendshipId)
+    setFriendRequests(prev => prev.filter(r => r.id !== friendshipId))
+  }
+
   function calcGpsDist(lat1: number, lon1: number, lat2: number, lon2: number) {
     const R = 6371000
     const dLat = (lat2-lat1)*Math.PI/180
@@ -750,6 +816,104 @@ export default function Home() {
           </div>
         </div>
         )}
+
+        {/* ===== フレンド ===== */}
+        {tab==='friends'&&(
+        <div className="page">
+          {/* フレンド検索 */}
+          <div className="sec">フレンドを追加</div>
+          <div className="card" style={{marginBottom:12}}>
+            <div style={{display:'flex',gap:8,marginBottom:searchResult||searchMsg?10:0}}>
+              <input value={searchUsername} onChange={e=>setSearchUsername(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&searchFriend()}
+                placeholder="ユーザー名で検索..." className="text-inp" style={{flex:1,fontSize:14}}/>
+              <button onClick={searchFriend}
+                style={{background:'#c8ff00',color:'#000',border:'none',borderRadius:10,padding:'9px 14px',cursor:'pointer',fontSize:13,fontWeight:500,fontFamily:"'DM Sans'"}}>
+                検索
+              </button>
+            </div>
+            {searchMsg&&<div style={{fontSize:12,color:searchMsg.includes('送り')?'#c8ff00':'#ff6666',marginTop:6}}>{searchMsg}</div>}
+            {searchResult&&(
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:'0.5px solid #2a2a2a',marginTop:8}}>
+                <div style={{width:36,height:36,borderRadius:'50%',background:'#1e1e1e',border:'0.5px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:600,color:'#c8ff00'}}>
+                  {searchResult.username[0].toUpperCase()}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:500,color:'#fff'}}>{searchResult.username}</div>
+                  <div style={{fontSize:11,color:'#777'}}>🔥 {searchResult.streak}日ストリーク</div>
+                </div>
+                <button onClick={()=>sendFriendRequest(searchResult.id)}
+                  style={{background:'#c8ff00',color:'#000',border:'none',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:12,fontWeight:500,fontFamily:"'DM Sans'"}}>
+                  追加
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* フレンドリクエスト */}
+          {friendRequests.length>0&&(
+            <>
+              <div className="sec">リクエスト受信中 {friendRequests.length}件</div>
+              <div className="card" style={{marginBottom:12}}>
+                {friendRequests.map(req=>(
+                  <div key={req.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'0.5px solid #2a2a2a'}}>
+                    <div style={{width:36,height:36,borderRadius:'50%',background:'#1e1e1e',border:'0.5px solid #333',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:600,color:'#a78bfa'}}>
+                      {req.requester.username[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:500,color:'#fff'}}>{req.requester.username}</div>
+                      <div style={{fontSize:11,color:'#777'}}>🔥 {req.requester.streak}日</div>
+                    </div>
+                    <button onClick={()=>acceptFriend(req.id, user!.id)}
+                      style={{background:'#c8ff00',color:'#000',border:'none',borderRadius:8,padding:'6px 12px',cursor:'pointer',fontSize:12,fontWeight:500,fontFamily:"'DM Sans'",marginRight:6}}>
+                      承認
+                    </button>
+                    <button onClick={()=>rejectFriend(req.id)}
+                      style={{background:'none',border:'0.5px solid #ff444455',borderRadius:8,padding:'6px 12px',cursor:'pointer',fontSize:12,color:'#ff6666',fontFamily:"'DM Sans'"}}>
+                      拒否
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* フレンド一覧 */}
+          <div className="sec">フレンド {friends.length}人</div>
+          {friends.length===0?(
+            <div style={{textAlign:'center',padding:'2rem 0',color:'#555',fontSize:13}}>
+              <div style={{fontSize:32,marginBottom:8}}>👥</div>
+              フレンドがいません<br/>
+              <span style={{fontSize:11,color:'#444'}}>ユーザー名で検索して追加しよう</span>
+            </div>
+          ):(
+            <div className="card">
+              {[...friends].sort((a,b)=>b.streak-a.streak).map((f,i)=>{
+                const maxStreak = Math.max(...friends.map((x:any)=>x.streak), 1)
+                const pct = Math.round(f.streak/maxStreak*100)
+                return(
+                  <div key={f.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'0.5px solid #1e1e1e'}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:20,width:24,color:i===0?'#c8ff00':i===1?'#888':'#555',textAlign:'center'}}>{i+1}</div>
+                    <div style={{width:40,height:40,borderRadius:'50%',background:'#1e1e1e',border:`1.5px solid ${i===0?'#c8ff00':'#333'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:600,color:i===0?'#c8ff00':'#aaa',flexShrink:0}}>
+                      {f.username[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:14,fontWeight:500,color:'#fff',marginBottom:4}}>{f.username}</div>
+                      <div style={{height:4,background:'#1e1e1e',borderRadius:2}}>
+                        <div style={{height:4,background:i===0?'#c8ff00':'#444',borderRadius:2,width:`${pct}%`,transition:'width 0.5s'}}/>
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:i===0?'#c8ff00':'#aaa',lineHeight:1}}>{f.streak}</div>
+                      <div style={{fontSize:9,color:'#555',textTransform:'uppercase'}}>days</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        )}
       </div>
 
       {/* ナビゲーション */}
@@ -761,6 +925,7 @@ export default function Home() {
           {id:'graph',label:'グラフ',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
           {id:'profile',label:'プロフィール',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>},
           {id:'badges',label:'バッジ',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>},
+          {id:'friends',label:'フレンド',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>},
         ].map(n=>(
           <button key={n.id} className={`nav-btn ${tab===n.id?'on':''}`} onClick={()=>setTab(n.id)}>
             {n.svg}<span>{n.label}</span>
