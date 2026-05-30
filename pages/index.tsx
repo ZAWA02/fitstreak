@@ -542,6 +542,12 @@ export default function Home() {
             </div>
           )}
           <button className="btn-ghost" onClick={()=>setTab('calendar')}>📅 カレンダーで予定を管理</button>
+          {!todayDone&&(
+            <button onClick={()=>{setExercises([{id:Math.random().toString(),name:'',sets:[{w:'',r:'',done:false}],mode:'strength'}]);setTab('log')}}
+              style={{width:'100%',background:'none',border:'0.5px solid #c8ff0044',borderRadius:10,padding:'10px',fontSize:13,color:'#c8ff00',cursor:'pointer',fontFamily:"'DM Sans'",marginTop:6}}>
+              💪 今すぐ記録する
+            </button>
+          )}
         </div>
         )}
 
@@ -644,6 +650,19 @@ export default function Home() {
           <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#555',marginBottom:10}}>
             {todayEvents.length>0?todayEvents[0].title:'WORKOUT'}
           </div>
+          {exercises.length===0&&(
+            <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:12,padding:'14px',marginBottom:12,textAlign:'center'}}>
+              <div style={{fontSize:13,color:'#aaa',marginBottom:10}}>種目を追加して記録を始めよう</div>
+              <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
+                {['ベンチプレス','スクワット','デッドリフト','ランニング','腕立て'].map(name=>(
+                  <button key={name} onClick={()=>setExercises(exs=>[...exs,{id:Math.random().toString(),name,sets:[{w:'',r:'',done:false}],mode:name==='ランニング'?'cardio':'strength'}])}
+                    style={{padding:'6px 12px',borderRadius:20,border:'0.5px solid #333',background:'#1e1e1e',color:'#ccc',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {exercises.map((ex,ei)=>(
             <div key={ex.id} className="card">
               {/* 種目名 */}
