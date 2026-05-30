@@ -61,6 +61,11 @@ export default function Home() {
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
   const [isAlarm, setIsAlarm] = useState(false)
+  const [profile, setProfile] = useState<any>(null)
+  const [showEditProfile, setShowEditProfile] = useState(false)
+  const [editUsername, setEditUsername] = useState('')
+  const [editProfileMsg, setEditProfileMsg] = useState('')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [friends, setFriends] = useState<any[]>([])
   const [friendRequests, setFriendRequests] = useState<any[]>([])
   const [searchUsername, setSearchUsername] = useState('')
@@ -140,13 +145,13 @@ export default function Home() {
       { data: prData },
       { data: badges },
     ] = await Promise.all([
-      supabase.from('profiles').select('streak').eq('id', uid).single(),
+      supabase.from('profiles').select('streak,username,avatar_url').eq('id', uid).single(),
       supabase.from('calendar_events').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('workouts').select('*').eq('user_id', uid).order('created_at',{ascending:false}).limit(30),
       supabase.from('personal_records').select('exercise_name,max_weight').eq('user_id', uid),
       supabase.from('earned_badges').select('badge_id').eq('user_id', uid),
     ])
-    if (profile) setStreak(profile.streak||0)
+    if (profile) { setStreak(profile.streak||0); setProfile(profile) }
     if (events) setCalEvents(events as CalEvent[])
     if (workouts) { setHistory(workouts); setTodayDone(workouts.some((w:any)=>w.date===todayKey)) }
     if (prData) setPrs(prData)
@@ -207,6 +212,39 @@ export default function Home() {
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
   // stopwatch colors
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
+  async function uploadAvatar(file: File) {
+    if (!user) return
+    setUploadingAvatar(true)
+    setEditProfileMsg('')
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${user.id}/avatar.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const avatarUrl = urlData.publicUrl + '?t=' + Date.now()
+      await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', user.id)
+      setProfile((prev:any) => ({...prev, avatar_url: avatarUrl}))
+      setEditProfileMsg('アイコンを更新しました！')
+    } catch(e:any) {
+      setEditProfileMsg('エラー: ' + e.message)
+    }
+    setUploadingAvatar(false)
+  }
+
+  async function updateUsername() {
+    if (!user || !editUsername.trim()) return
+    setEditProfileMsg('')
+    // 重複チェック
+    const { data: existing } = await supabase.from('profiles').select('id').eq('username', editUsername.trim()).single()
+    if (existing && existing.id !== user.id) { setEditProfileMsg('このユーザー名はすでに使われています'); return }
+    const { error } = await supabase.from('profiles').update({ username: editUsername.trim() }).eq('id', user.id)
+    if (error) { setEditProfileMsg('エラー: ' + error.message); return }
+    setProfile((prev:any) => ({...prev, username: editUsername.trim()}))
+    setEditProfileMsg('ユーザー名を更新しました！')
+    setShowEditProfile(false)
+  }
+
   async function loadFriends(uid: string) {
     // 承認済みフレンド
     const { data: fs } = await supabase
@@ -748,9 +786,28 @@ export default function Home() {
         {tab==='profile'&&(
         <div className="page">
           <div style={{textAlign:'center',padding:'12px 0 10px'}}>
-            <div style={{fontSize:40,marginBottom:4}}>{lv.icon}</div>
+            {/* アバター */}
+            <div style={{position:'relative',width:72,height:72,margin:'0 auto 10px'}}>
+              {profile?.avatar_url?(
+                <img src={profile.avatar_url} alt="avatar" style={{width:72,height:72,borderRadius:'50%',objectFit:'cover',border:`2px solid ${lv.color}`}}/>
+              ):(
+                <div style={{width:72,height:72,borderRadius:'50%',background:'#1e1e1e',border:`2px solid ${lv.color}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:600,color:lv.color}}>
+                  {profile?.username?.[0]?.toUpperCase()||'?'}
+                </div>
+              )}
+              <label style={{position:'absolute',bottom:0,right:0,width:22,height:22,borderRadius:'50%',background:'#c8ff00',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:12}}>
+                {uploadingAvatar?'⏳':'📷'}
+                <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)uploadAvatar(f)}}/>
+              </label>
+            </div>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:lv.color,letterSpacing:2}}>LV.{lv.lv} {lv.name}</div>
-            <div style={{fontSize:10,color:'#444',marginTop:2}}>{xp} WORKOUTS</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:lv.color,letterSpacing:2}}>LV.{lv.lv} {lv.name}</div>
+            <div style={{fontSize:15,color:'#fff',fontWeight:500,marginTop:4}}>{profile?.username||''}</div>
+            <div style={{fontSize:10,color:'#555',marginTop:2}}>{xp} WORKOUTS</div>
+            <button onClick={()=>{setEditUsername(profile?.username||'');setEditProfileMsg('');setShowEditProfile(true)}}
+              style={{marginTop:8,background:'none',border:'0.5px solid #333',borderRadius:20,padding:'5px 14px',color:'#aaa',fontSize:11,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+              ✏️ プロフィール編集
+            </button>
             <div style={{maxWidth:160,margin:'8px auto 0'}}>
               <div style={{height:3,background:'var(--bg4)',borderRadius:2,overflow:'hidden'}}>
                 <div style={{height:3,background:lv.color,width:`${lvPct}%`,borderRadius:2}}/>
@@ -980,6 +1037,31 @@ export default function Home() {
           </div>
         </div>
       )}
+      {/* プロフィール編集モーダル */}
+      {showEditProfile&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:150,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={e=>{if(e.target===e.currentTarget)setShowEditProfile(false)}}>
+          <div style={{background:'#161616',borderRadius:'20px 20px 0 0',padding:'20px 20px calc(20px + env(safe-area-inset-bottom,0px))',width:'100%',maxWidth:430}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#c8ff00'}}>プロフィール編集</div>
+              <button onClick={()=>setShowEditProfile(false)} style={{background:'none',border:'none',color:'#555',cursor:'pointer',fontSize:20}}>×</button>
+            </div>
+            <div style={{fontSize:10,color:'#999',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>ユーザー名</div>
+            <input value={editUsername} onChange={e=>setEditUsername(e.target.value)}
+              placeholder="新しいユーザー名..." className="text-inp" style={{marginBottom:6,fontSize:16}}/>
+            <div style={{fontSize:10,color:'#555',marginBottom:14}}>※ 他のユーザーと重複するユーザー名は使えません</div>
+            {editProfileMsg&&(
+              <div style={{fontSize:12,color:editProfileMsg.includes('更新')?'#c8ff00':'#ff6666',marginBottom:10,padding:'6px 10px',background:editProfileMsg.includes('更新')?'rgba(200,255,0,0.08)':'rgba(255,68,68,0.08)',borderRadius:8}}>
+                {editProfileMsg}
+              </div>
+            )}
+            <button onClick={updateUsername}
+              style={{width:'100%',background:'#c8ff00',color:'#000',border:'none',borderRadius:10,padding:'12px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+              保存
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* アラームオーバーレイ */}
       {isAlarm&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20}}>
