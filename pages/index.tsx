@@ -170,7 +170,7 @@ export default function Home() {
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
     :root{--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;--bg4:#222;--acc:#c8ff00;--text:#f0f0f0;--muted:#555;--muted2:#2a2a2a;}
-    html,body{height:100%;overflow:hidden;}
+    html,body{height:100%;overflow:hidden;} input,textarea,select{font-size:16px !important;}
     body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
     .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);}
     .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px;flex-shrink:0;border-bottom:0.5px solid var(--muted2);}
@@ -192,7 +192,7 @@ export default function Home() {
     .sec{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:6px;}
     .inp{width:50px;text-align:center;font-size:12px;padding:4px;border:0.5px solid var(--muted2);border-radius:6px;background:var(--bg3);color:var(--text);font-family:'DM Sans';}
     .inp:focus{outline:none;border-color:var(--acc);}
-    .text-inp{width:100%;font-size:13px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
+    .text-inp{width:100%;font-size:16px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
     .text-inp:focus{border-color:var(--acc);}
     .stat-box{background:var(--bg2);border:0.5px solid var(--muted2);border-radius:10px;padding:10px;text-align:center;}
     .done-circle{width:24px;height:24px;border-radius:50%;border:0.5px solid var(--muted2);background:none;color:var(--muted);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;margin:0 auto;}
@@ -596,7 +596,7 @@ export default function Home() {
             <input className="text-inp" placeholder="例：胸トレ、ランニング、休養日..." value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{marginBottom:12}}/>
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>メモ（任意）</div>
             <textarea value={editMemo} onChange={e=>setEditMemo(e.target.value)} placeholder="詳細メモ..."
-              style={{width:'100%',fontSize:13,background:'var(--bg3)',border:'0.5px solid var(--muted2)',borderRadius:10,padding:'9px 12px',color:'var(--text)',fontFamily:"'DM Sans'",outline:'none',resize:'none',marginBottom:14}} rows={2}/>
+              style={{width:'100%',fontSize:16,background:'var(--bg3)',border:'0.5px solid var(--muted2)',borderRadius:10,padding:'9px 12px',color:'var(--text)',fontFamily:"'DM Sans'",outline:'none',resize:'none',marginBottom:14}} rows={2}/>
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>カラー</div>
             <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
               {EVENT_COLORS.map(c=>(
