@@ -385,6 +385,26 @@ export default function Home() {
     gpsLastPos.current = null
   }
 
+  async function cancelTodayWorkout() {
+    if (!user) return
+    if (!confirm('今日のワークアウト記録を取り消しますか？')) return
+    // 今日のワークアウトを削除
+    const { data: todayWorkouts } = await supabase
+      .from('workouts')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('date', todayKey)
+    if (todayWorkouts && todayWorkouts.length > 0) {
+      await supabase.from('workouts').delete().eq('user_id', user.id).eq('date', todayKey)
+    }
+    // ストリークを1減らす
+    const newStreak = Math.max(0, streak - 1)
+    await supabase.from('profiles').update({ streak: newStreak }).eq('id', user.id)
+    setStreak(newStreak)
+    setTodayDone(false)
+    await loadData(user.id)
+  }
+
   function stopAlarm() {
     setIsAlarm(false)
     if ((window as any).__alarmInterval) { clearInterval((window as any).__alarmInterval); (window as any).__alarmInterval = null }
