@@ -61,6 +61,10 @@ export default function Home() {
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
   const [isAlarm, setIsAlarm] = useState(false)
+  const [gpsTracking, setGpsTracking] = useState<string|null>(null) // exercise id being tracked
+  const [gpsDistance, setGpsDistance] = useState<Record<string,number>>({}) // exId -> meters
+  const [gpsWatchId, setGpsWatchId] = useState<number|null>(null)
+  const gpsLastPos = { current: null as GeolocationPosition|null }
 
   const audioCtxRef = typeof window !== 'undefined' ? { current: null as any } : { current: null }
 
@@ -196,6 +200,51 @@ export default function Home() {
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
   // stopwatch colors
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
+  function calcGpsDist(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371000
+    const dLat = (lat2-lat1)*Math.PI/180
+    const dLon = (lon2-lon1)*Math.PI/180
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))
+  }
+
+  function startGps(exId: string) {
+    if (!navigator.geolocation) { alert('このブラウザはGPSに対応していません'); return }
+    gpsLastPos.current = null
+    setGpsDistance(prev=>({...prev,[exId]:0}))
+    setGpsTracking(exId)
+    const id = navigator.geolocation.watchPosition(
+      pos => {
+        if (gpsLastPos.current) {
+          const d = calcGpsDist(
+            gpsLastPos.current.coords.latitude, gpsLastPos.current.coords.longitude,
+            pos.coords.latitude, pos.coords.longitude
+          )
+          if (d > 2) { // 2m以上動いた時のみ加算（ノイズ除去）
+            setGpsDistance(prev => {
+              const newDist = (prev[exId]||0) + d
+              // 距離をkm単位でexerciseのdistに反映
+              setExercises(exs => exs.map(ex => ex.id===exId ? {
+                ...ex, sets: ex.sets.map((s,i) => i===0 ? {...s, dist: (newDist/1000).toFixed(2)} : s)
+              } : ex))
+              return {...prev, [exId]: newDist}
+            })
+          }
+        }
+        gpsLastPos.current = pos
+      },
+      err => { alert('GPS取得エラー: '+err.message); stopGps() },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    )
+    setGpsWatchId(id)
+  }
+
+  function stopGps() {
+    if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); setGpsWatchId(null) }
+    setGpsTracking(null)
+    gpsLastPos.current = null
+  }
+
   function stopAlarm() {
     setIsAlarm(false)
     if ((window as any).__alarmInterval) { clearInterval((window as any).__alarmInterval); (window as any).__alarmInterval = null }
@@ -513,9 +562,20 @@ export default function Home() {
                             style={{width:'100%',textAlign:'center',fontSize:16,padding:'8px',border:'0.5px solid #333',borderRadius:8,background:'#1e1e1e',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
                         </div>
                         <div>
-                          <div style={{fontSize:10,color:'#999',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>距離（km）</div>
-                          <input type="number" placeholder="5.0" step="0.1" value={s.dist||''} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,dist:e.target.value}:s2)}:ex2))}
-                            style={{width:'100%',textAlign:'center',fontSize:16,padding:'8px',border:'0.5px solid #333',borderRadius:8,background:'#1e1e1e',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5}}>
+                            <div style={{fontSize:10,color:'#999',textTransform:'uppercase',letterSpacing:'0.08em'}}>距離（km）</div>
+                            {i===0&&(
+                              <button onClick={()=>gpsTracking===ex.id?stopGps():startGps(ex.id)}
+                                style={{fontSize:10,padding:'3px 8px',borderRadius:12,border:'none',background:gpsTracking===ex.id?'rgba(255,68,68,0.2)':'rgba(34,211,238,0.15)',color:gpsTracking===ex.id?'#ff5555':'#22d3ee',cursor:'pointer',fontFamily:"'DM Sans'",fontWeight:500}}>
+                                {gpsTracking===ex.id?'⏹ GPS停止':'📍 GPS計測'}
+                              </button>
+                            )}
+                          </div>
+                          <div style={{position:'relative'}}>
+                            <input type="number" placeholder="5.0" step="0.01" value={s.dist||''} onChange={e=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,dist:e.target.value}:s2)}:ex2))}
+                              style={{width:'100%',textAlign:'center',fontSize:16,padding:'8px',border:`0.5px solid ${gpsTracking===ex.id?'#22d3ee':'#333'}`,borderRadius:8,background:'#1e1e1e',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
+                            {gpsTracking===ex.id&&<div style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',width:6,height:6,borderRadius:'50%',background:'#22d3ee',animation:'pulse 1s infinite'}}/>}
+                          </div>
                         </div>
                         <button className={`done-circle ${s.done?'on':''}`} style={{marginBottom:2,flexShrink:0}} onClick={()=>{
                           setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,done:!s2.done}:s2)}:ex2))
