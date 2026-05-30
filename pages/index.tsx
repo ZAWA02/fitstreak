@@ -60,6 +60,8 @@ export default function Home() {
   const [swTotal, setSwTotal] = useState(90000)  // ms remaining
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
+  const [isAlarm, setIsAlarm] = useState(false)
+  const alarmRef = { current: null as any }
 
   const audioCtxRef = typeof window !== 'undefined' ? { current: null as any } : { current: null }
 
@@ -87,26 +89,32 @@ export default function Home() {
         if (prev <= interval) {
           setSwRunning(false)
           // Beep sound using Web Audio API
-          try {
-            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-            const ctx = new AudioCtx()
-            const beep = (freq: number, start: number, dur: number) => {
-              const o = ctx.createOscillator()
-              const g = ctx.createGain()
-              o.connect(g); g.connect(ctx.destination)
-              o.frequency.value = freq
-              o.type = 'sine'
-              g.gain.setValueAtTime(0, ctx.currentTime + start)
-              g.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.01)
-              g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
-              o.start(ctx.currentTime + start)
-              o.stop(ctx.currentTime + start + dur + 0.05)
-            }
-            beep(880, 0, 0.2)
-            beep(880, 0.25, 0.2)
-            beep(1320, 0.5, 0.4)
-            setTimeout(() => ctx.close(), 2000)
-          } catch(e) { console.log('Audio error:', e) }
+          setIsAlarm(true)
+          // Start repeating alarm
+          const playAlarm = () => {
+            try {
+              const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+              const ctx = new AudioCtx()
+              const beep = (freq: number, start: number, dur: number) => {
+                const o = ctx.createOscillator()
+                const g = ctx.createGain()
+                o.connect(g); g.connect(ctx.destination)
+                o.frequency.value = freq
+                o.type = 'sine'
+                g.gain.setValueAtTime(0, ctx.currentTime + start)
+                g.gain.linearRampToValueAtTime(0.5, ctx.currentTime + start + 0.01)
+                g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+                o.start(ctx.currentTime + start)
+                o.stop(ctx.currentTime + start + dur + 0.05)
+              }
+              beep(880, 0, 0.15)
+              beep(880, 0.2, 0.15)
+              beep(1320, 0.4, 0.3)
+              setTimeout(() => ctx.close(), 1500)
+            } catch(e) {}
+          }
+          playAlarm()
+          alarmRef.current = setInterval(playAlarm, 2000)
           return 0
         }
         return prev - interval
@@ -189,6 +197,13 @@ export default function Home() {
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
   // stopwatch colors
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
+  function stopAlarm() {
+    setIsAlarm(false)
+    if (alarmRef.current) { clearInterval(alarmRef.current); alarmRef.current = null }
+    setSwTotal(swMs)
+    setSwRunning(false)
+  }
+
   const MONTHS=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
   const firstDay = new Date(calYear,calMonth,1).getDay()
   const daysInMonth = new Date(calYear,calMonth+1,0).getDate()
@@ -239,6 +254,7 @@ export default function Home() {
     .modal-sheet{background:#161616;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:430px;max-height:85vh;overflow-y:auto;}
     .color-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;}
     .color-dot.sel{border-color:white;transform:scale(1.15);}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.05)}}
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
     .cal-cell{border-radius:8px;cursor:pointer;border:0.5px solid transparent;display:flex;flex-direction:column;align-items:center;padding:4px 2px 3px;min-height:52px;}
     .cal-cell:active{opacity:0.7;}
@@ -692,6 +708,18 @@ export default function Home() {
               🗑 この予定を削除
             </button>
           </div>
+        </div>
+      )}
+      {/* アラームオーバーレイ */}
+      {isAlarm&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:3,color:'#c8ff00',animation:'pulse 1s infinite'}}>TIME UP !</div>
+          <div style={{fontSize:48}}>⏰</div>
+          <button onClick={stopAlarm}
+            style={{padding:'16px 48px',background:'#c8ff00',color:'#000',border:'none',borderRadius:24,fontSize:18,fontWeight:700,cursor:'pointer',fontFamily:"'DM Sans'",letterSpacing:'0.05em',boxShadow:'0 0 30px rgba(200,255,0,0.5)'}}>
+            RESET
+          </button>
+          <div style={{fontSize:12,color:'#555'}}>タップして止める</div>
         </div>
       )}
     </div>
