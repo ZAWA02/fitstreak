@@ -23,9 +23,9 @@ const BADGES = [
 ]
 const EVENT_COLORS = ['#c8ff00','#f472b6','#60a5fa','#fbbf24','#a78bfa','#f97316','#34d399','#22d3ee','#ff6b6b']
 
-interface SetRow { w: string; r: string; done: boolean; time?: string; dist?: string }
+interface SetRow { w: string; r: string; done: boolean; time?: string; dist?: string; reps?: string }
 interface Exercise { id: string; name: string; sets: SetRow[]; mode: 'strength' | 'cardio' }
-interface WorkoutRecord { id: string; date: string; muscle: string; total_sets: number; total_volume: number }
+interface WorkoutRecord { id: string; date: string; muscle: string; total_sets: number; total_volume: number; total_time?: number; total_distance?: number; total_reps?: number }
 interface PR { exercise_name: string; max_weight: number }
 interface CalEvent { id: string; date: string; title: string; memo?: string; color: string; repeat_type?: string; repeat_id?: string; is_base?: boolean }
 
@@ -149,7 +149,7 @@ export default function Home() {
     ] = await Promise.all([
       supabase.from('profiles').select('streak,username,avatar_url').eq('id', uid).single(),
       supabase.from('calendar_events').select('*').eq('user_id', uid).order('created_at'),
-      supabase.from('workouts').select('*').eq('user_id', uid).order('created_at',{ascending:false}).limit(30),
+      supabase.from('workouts').select('id,date,muscle,total_sets,total_volume,total_time,total_distance,total_reps').eq('user_id', uid).order('created_at',{ascending:false}).limit(30),
       supabase.from('personal_records').select('exercise_name,max_weight').eq('user_id', uid),
       supabase.from('earned_badges').select('badge_id').eq('user_id', uid),
     ])
@@ -788,33 +788,91 @@ export default function Home() {
         {/* ===== グラフ ===== */}
         {tab==='graph'&&(
         <div className="page">
-          <div className="sec">ボリューム推移</div>
-          <div className="card">
-            {history.length===0?<div style={{textAlign:'center',padding:'1rem 0',color:'var(--muted)',fontSize:12}}>記録するとグラフが表示されます</div>:(
-              <div style={{display:'flex',alignItems:'flex-end',gap:3,height:70,marginBottom:5}}>
-                {[...history].slice(0,8).reverse().map((h:any,i)=>{
-                  const maxVol=Math.max(...history.slice(0,8).map((x:any)=>x.total_volume||0),1)
-                  const pct=Math.round((h.total_volume||0)/maxVol*70)
-                  return(
-                    <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                      <div style={{fontSize:7,color:'#c8ff00'}}>{h.total_volume||0}</div>
-                      <div style={{width:'100%',background:'#c8ff00',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
-                      <div style={{fontSize:7,color:'var(--muted)'}}>{String(h.date).slice(5).replace('-','/')}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+          {/* サマリー */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+            <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:10,padding:'10px 6px',textAlign:'center'}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:'#c8ff00',lineHeight:1}}>{history.reduce((s:number,h:any)=>s+(h.total_volume||0),0).toLocaleString()}</div>
+              <div style={{fontSize:8,color:'#666',textTransform:'uppercase',marginTop:2}}>累計 kg</div>
+            </div>
+            <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:10,padding:'10px 6px',textAlign:'center'}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:'#22d3ee',lineHeight:1}}>{history.reduce((s:number,h:any)=>s+(h.total_distance||0),0).toFixed(1)}</div>
+              <div style={{fontSize:8,color:'#666',textTransform:'uppercase',marginTop:2}}>累計 km</div>
+            </div>
+            <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:10,padding:'10px 6px',textAlign:'center'}}>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:'#a78bfa',lineHeight:1}}>{history.reduce((s:number,h:any)=>s+(h.total_reps||0),0).toLocaleString()}</div>
+              <div style={{fontSize:8,color:'#666',textTransform:'uppercase',marginTop:2}}>累計 reps</div>
+            </div>
           </div>
-          <div className="sec" style={{marginTop:4}}>最近の記録</div>
+
+          {/* 重量グラフ */}
+          <div className="sec">💪 重量ボリューム (kg)</div>
+          <div className="card" style={{marginBottom:10}}>
+            {history.filter((h:any)=>h.total_volume>0).length===0
+              ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>筋トレ記録がありません</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
+                {[...history].filter((h:any)=>h.total_volume>0).slice(0,8).reverse().map((h:any,i,arr)=>{
+                  const maxV=Math.max(...arr.map((x:any)=>x.total_volume||0),1)
+                  const pct=Math.round((h.total_volume||0)/maxV*65)
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                    <div style={{fontSize:7,color:'#c8ff00'}}>{h.total_volume}</div>
+                    <div style={{width:'100%',background:'#c8ff00',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
+                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+                  </div>)
+                })}
+              </div>}
+          </div>
+
+          {/* 距離グラフ */}
+          <div className="sec">🏃 走行距離 (km)</div>
+          <div className="card" style={{marginBottom:10}}>
+            {history.filter((h:any)=>h.total_distance>0).length===0
+              ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>有酸素記録がありません</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
+                {[...history].filter((h:any)=>h.total_distance>0).slice(0,8).reverse().map((h:any,i,arr)=>{
+                  const maxD=Math.max(...arr.map((x:any)=>x.total_distance||0),1)
+                  const pct=Math.round((h.total_distance||0)/maxD*65)
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                    <div style={{fontSize:7,color:'#22d3ee'}}>{parseFloat(h.total_distance).toFixed(1)}</div>
+                    <div style={{width:'100%',background:'#22d3ee',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
+                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+                  </div>)
+                })}
+              </div>}
+          </div>
+
+          {/* 時間グラフ */}
+          <div className="sec">⏱ 有酸素時間 (分)</div>
+          <div className="card" style={{marginBottom:10}}>
+            {history.filter((h:any)=>h.total_time>0).length===0
+              ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>有酸素記録がありません</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
+                {[...history].filter((h:any)=>h.total_time>0).slice(0,8).reverse().map((h:any,i,arr)=>{
+                  const maxT=Math.max(...arr.map((x:any)=>x.total_time||0),1)
+                  const pct=Math.round((h.total_time||0)/maxT*65)
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                    <div style={{fontSize:7,color:'#fbbf24'}}>{Math.round(h.total_time)}</div>
+                    <div style={{width:'100%',background:'#fbbf24',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
+                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+                  </div>)
+                })}
+              </div>}
+          </div>
+
+          {/* 最近の記録 */}
+          <div className="sec">最近の記録</div>
           <div className="card">
-            {history.length===0?<div style={{textAlign:'center',color:'var(--muted)',fontSize:12,padding:'0.5rem 0'}}>まだ記録がありません</div>:
-              history.slice(0,6).map((h:any,i)=>(
-                <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'0.5px solid #111'}}>
+            {history.length===0?<div style={{textAlign:'center',color:'#555',fontSize:12,padding:'0.5rem 0'}}>まだ記録がありません</div>:
+              history.slice(0,8).map((h:any,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'0.5px solid #111'}}>
                   <div style={{width:5,height:5,borderRadius:'50%',background:'#c8ff00',flexShrink:0}}/>
                   <div style={{fontSize:10,color:'#444',minWidth:48}}>{String(h.date).slice(5).replace('-','/')}</div>
                   <div style={{flex:1,fontSize:12,color:'#ccc'}}>{h.muscle}</div>
-                  <div style={{fontSize:12,fontWeight:500,color:'#c8ff00'}}>{(h.total_volume||0).toLocaleString()}kg</div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:1}}>
+                    {h.total_volume>0&&<div style={{fontSize:11,fontWeight:500,color:'#c8ff00'}}>{h.total_volume.toLocaleString()}kg</div>}
+                    {h.total_distance>0&&<div style={{fontSize:11,fontWeight:500,color:'#22d3ee'}}>{parseFloat(h.total_distance).toFixed(1)}km</div>}
+                    {h.total_time>0&&!h.total_distance&&<div style={{fontSize:11,fontWeight:500,color:'#fbbf24'}}>{Math.round(h.total_time)}分</div>}
+                    {h.total_reps>0&&!h.total_volume&&<div style={{fontSize:11,fontWeight:500,color:'#a78bfa'}}>{h.total_reps}reps</div>}
+                  </div>
                 </div>
               ))}
           </div>
