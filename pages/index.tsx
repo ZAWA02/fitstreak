@@ -368,12 +368,18 @@ export default function Home() {
               return(
                 <div key={i} className="cal-cell" onClick={()=>{if(isOther)return;setSelectedDate(isSel?null:key)}}
                   style={{opacity:isOther?0.12:1,background:isSel?'var(--bg4)':isDone?'#0d1f0d':'transparent',border:isToday?`1.5px solid #c8ff00`:isSel?`1px solid #c8ff00`:isDone?'0.5px solid #1a4a1a':'0.5px solid transparent'}}>
-                  <div style={{fontSize:12,color:dow===0&&!isOther?'#ff6b6b':dow===6&&!isOther?'#60a5fa':isToday?'#c8ff00':'#ccc',fontWeight:isToday?600:400,lineHeight:1}}>{d}</div>
-                  {isDone&&<div style={{width:5,height:5,borderRadius:'50%',background:'#c8ff00',marginTop:3}}/>}
+                  <div style={{
+                    width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                    border:isDone?'2px solid #c8ff00':isToday?'2px solid #c8ff00':'none',
+                    background:isDone?'rgba(200,255,0,0.12)':'transparent',
+                    marginBottom:2,
+                  }}>
+                    <div style={{fontSize:12,color:dow===0&&!isOther?'#ff6b6b':dow===6&&!isOther?'#60a5fa':isToday||isDone?'#c8ff00':'#ccc',fontWeight:isToday||isDone?600:400,lineHeight:1}}>{d}</div>
+                  </div>
                   {!isDone&&evs.length>0&&(
-                    <div style={{marginTop:3,display:'flex',flexDirection:'column',alignItems:'center',gap:2,width:'100%'}}>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,width:'100%'}}>
                       {evs.slice(0,2).map((ev,ei)=>(
-                        <div key={ei} style={{width:'80%',height:3,borderRadius:2,background:ev.color}}/>
+                        <div key={ei} style={{width:'70%',height:3,borderRadius:2,background:ev.color}}/>
                       ))}
                       {evs.length>2&&(
                         <div style={{fontSize:8,color:'#aaa',lineHeight:1,marginTop:1}}>+{evs.length-2}</div>
