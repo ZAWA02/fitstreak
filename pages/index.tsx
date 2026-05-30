@@ -57,9 +57,9 @@ export default function Home() {
   const [editColor, setEditColor] = useState(EVENT_COLORS[0])
   const [newExName, setNewExName] = useState('')
   const [notifs, setNotifs] = useState<string[]>([])
-  const [timerSec, setTimerSec] = useState(0)
-  const [timerMax, setTimerMax] = useState(90)
-  const [timerOn, setTimerOn] = useState(false)
+  const [swTotal, setSwTotal] = useState(90000)  // ms remaining
+  const [swMs, setSwMs] = useState(90000)       // preset ms
+  const [swRunning, setSwRunning] = useState(false)
 
   const now = new Date()
   const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate()
@@ -78,10 +78,36 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (!timerOn) return
-    const t = setInterval(() => setTimerSec(s => { if (s<=1){setTimerOn(false);return 0} return s-1 }), 1000)
+    if (!swRunning) return
+    const interval = 50
+    const t = setInterval(() => {
+      setSwTotal(prev => {
+        if (prev <= interval) {
+          setSwRunning(false)
+          // Beep sound using Web Audio API
+          try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+            const beep = (freq: number, start: number, dur: number) => {
+              const o = ctx.createOscillator()
+              const g = ctx.createGain()
+              o.connect(g); g.connect(ctx.destination)
+              o.frequency.value = freq
+              g.gain.setValueAtTime(0.3, ctx.currentTime + start)
+              g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+              o.start(ctx.currentTime + start)
+              o.stop(ctx.currentTime + start + dur)
+            }
+            beep(880, 0, 0.15)
+            beep(880, 0.18, 0.15)
+            beep(1100, 0.36, 0.3)
+          } catch(e) {}
+          return 0
+        }
+        return prev - interval
+      })
+    }, interval)
     return () => clearInterval(t)
-  }, [timerOn])
+  }, [swRunning])
 
   async function loadData(uid: string) {
     setLoading(true)
@@ -153,12 +179,10 @@ export default function Home() {
     await loadData(user.id); setTab('today')
   }
 
-  function startTimer(s: number) { setTimerMax(s); setTimerSec(s); setTimerOn(true) }
-
   const xp = history.length, lv = calcLv(xp), nl = nextLv(xp)
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
-  const timerCol = timerSec<=10&&timerSec>0 ? '#ff4444' : timerSec===0 ? '#00ff87' : '#c8ff00'
-  const timerR=54, timerCirc=2*Math.PI*timerR, timerDash=Math.round((timerMax>0?timerSec/timerMax:0)*timerCirc)
+  // stopwatch colors
+  const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
   const MONTHS=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
   const firstDay = new Date(calYear,calMonth,1).getDay()
   const daysInMonth = new Date(calYear,calMonth+1,0).getDate()
@@ -169,7 +193,7 @@ export default function Home() {
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-    :root{--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;--bg4:#222;--acc:#c8ff00;--text:#f0f0f0;--muted:#555;--muted2:#2a2a2a;}
+    :root{--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;--bg4:#222;--acc:#c8ff00;--text:#f0f0f0;--muted:#888;--muted2:#2a2a2a;}
     html,body{height:100%;overflow:hidden;} input,textarea,select{font-size:16px !important;}
     body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
     .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);}
@@ -181,7 +205,7 @@ export default function Home() {
     .page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:12px 16px 16px;}
     .page::-webkit-scrollbar{display:none;}
     .nav{display:flex;border-top:0.5px solid var(--muted2);background:var(--bg);flex-shrink:0;padding:6px 0;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));}
-    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border:none;background:none;color:var(--muted);font-family:'DM Sans';cursor:pointer;}
+    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border:none;background:none;color:#777;font-family:'DM Sans';cursor:pointer;}
     .nav-btn.on{color:var(--acc);}
     .nav-btn svg{width:20px;height:20px;}
     .nav-btn span{font-size:8px;letter-spacing:0.03em;}
@@ -189,7 +213,7 @@ export default function Home() {
     .btn{width:100%;background:var(--acc);color:#000;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans';margin-top:8px;}
     .btn:active{transform:scale(0.98);}
     .btn-ghost{width:100%;background:none;border:0.5px solid var(--muted2);border-radius:10px;padding:9px;font-size:12px;color:var(--muted);cursor:pointer;font-family:'DM Sans';margin-top:6px;}
-    .sec{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:6px;}
+    .sec{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:6px;}
     .inp{width:50px;text-align:center;font-size:12px;padding:4px;border:0.5px solid var(--muted2);border-radius:6px;background:var(--bg3);color:var(--text);font-family:'DM Sans';}
     .inp:focus{outline:none;border-color:var(--acc);}
     .text-inp{width:100%;font-size:16px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
@@ -417,7 +441,7 @@ export default function Home() {
                       <td style={{textAlign:'center',padding:3}}>
                         <button className={`done-circle ${s.done?'on':''}`} onClick={()=>{
                           setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,sets:ex2.sets.map((s2,j)=>j===i?{...s2,done:!s2.done}:s2)}:ex2))
-                          if(!s.done&&!timerOn) startTimer(timerMax)
+                          if(!s.done&&!swRunning){setSwTotal(swMs);setSwRunning(true)}
                         }}>{s.done&&'✓'}</button>
                       </td>
                     </tr>
@@ -429,24 +453,29 @@ export default function Home() {
             </div>
           ))}
 
-          {/* タイマー */}
-          <div style={{textAlign:'center',padding:'10px 0'}}>
-            <div style={{position:'relative',width:110,height:110,margin:'0 auto'}}>
-              <svg style={{position:'absolute',top:0,left:0,transform:'rotate(-90deg)'}} width="110" height="110" viewBox="0 0 110 110">
-                <circle cx="55" cy="55" r={timerR-4} fill="none" stroke="#1a1a1a" strokeWidth="5"/>
-                <circle cx="55" cy="55" r={timerR-4} fill="none" stroke={timerCol} strokeWidth="5" strokeDasharray={`${timerDash} ${timerCirc}`} strokeLinecap="round"/>
-              </svg>
-              <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2,lineHeight:1,color:timerCol}}>{Math.floor(timerSec/60)}:{String(timerSec%60).padStart(2,'0')}</div>
-                <div style={{fontSize:8,color:'var(--muted)',letterSpacing:'0.1em',textTransform:'uppercase',marginTop:1}}>{timerSec===0?'DONE':timerOn?'REST':'PAUSED'}</div>
-              </div>
+          {/* ストップウォッチ */}
+          <div style={{textAlign:'center',padding:'10px 0',background:'var(--bg2)',borderRadius:12,marginBottom:10}}>
+            <div style={{fontSize:10,color:'#999',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8}}>REST TIMER</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:52,letterSpacing:3,lineHeight:1,color:swRunning?'#c8ff00':swMs===0&&swTotal>0?'#00ff87':'#f0f0f0',marginBottom:4}}>
+              {String(Math.floor(swTotal/60000)).padStart(2,'0')}:{String(Math.floor((swTotal%60000)/1000)).padStart(2,'0')}<span style={{fontSize:24,color:'#555'}}>.{String(Math.floor((swTotal%1000)/10)).padStart(2,'0')}</span>
             </div>
-            <div style={{display:'flex',gap:5,justifyContent:'center',marginTop:8}}>
-              {[60,90,120].map(s=><button key={s} onClick={()=>startTimer(s)} className="pill" style={{fontSize:11,padding:'5px 10px',background:timerMax===s&&timerOn?'#c8ff00':undefined,color:timerMax===s&&timerOn?'#000':undefined,borderColor:timerMax===s&&timerOn?'#c8ff00':undefined}}>{s}s</button>)}
+            <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:8}}>
+              {[30,60,90,120,180].map(s=>(
+                <button key={s} onClick={()=>{setSwTotal(s*1000);setSwRunning(false);setSwMs(s*1000)}}
+                  style={{padding:'4px 8px',borderRadius:20,border:'0.5px solid var(--muted2)',background:swMs===s*1000?'#c8ff0022':'var(--bg3)',color:swMs===s*1000?'#c8ff00':'#777',fontSize:10,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  {s}s
+                </button>
+              ))}
             </div>
-            <div style={{display:'flex',gap:5,justifyContent:'center',marginTop:6}}>
-              <button onClick={()=>setTimerOn(o=>!o)} className="pill" style={{fontSize:11,padding:'5px 10px'}}>{timerOn?'PAUSE':'RESUME'}</button>
-              <button onClick={()=>{setTimerSec(timerMax);setTimerOn(false)}} className="pill" style={{fontSize:11,padding:'5px 10px'}}>RESET</button>
+            <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+              <button onClick={()=>setSwRunning(r=>!r)}
+                style={{padding:'8px 24px',borderRadius:20,border:'none',background:swRunning?'#ff444422':'#c8ff0022',color:swRunning?'#ff4444':'#c8ff00',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                {swRunning?'⏸ PAUSE':'▶ START'}
+              </button>
+              <button onClick={()=>{setSwRunning(false);setSwTotal(swMs)}}
+                style={{padding:'8px 18px',borderRadius:20,border:'0.5px solid var(--muted2)',background:'var(--bg3)',color:'#888',fontSize:13,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                ↺ RESET
+              </button>
             </div>
           </div>
 
