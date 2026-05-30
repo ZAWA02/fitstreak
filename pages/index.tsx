@@ -21,14 +21,13 @@ const BADGES = [
   { id: 'pr1', name: '初PR', icon: '🚀', cond: 'PR更新' },
   { id: 'lv3', name: 'ATHLETE', icon: '🏃', cond: 'Lv.3到達' },
 ]
+const EVENT_COLORS = ['#c8ff00','#f472b6','#60a5fa','#fbbf24','#a78bfa','#f97316','#34d399','#22d3ee','#ff6b6b']
 
 interface SetRow { w: string; r: string; done: boolean }
 interface Exercise { id: string; name: string; sets: SetRow[] }
 interface WorkoutRecord { id: string; date: string; muscle: string; total_sets: number; total_volume: number }
 interface PR { exercise_name: string; max_weight: number }
-interface CalEvent { date: string; label?: string; memo?: string; color?: string }
-
-const EVENT_COLORS = ['#c8ff00','#f472b6','#60a5fa','#fbbf24','#a78bfa','#f97316','#34d399','#22d3ee','#ff4444']
+interface CalEvent { id: string; date: string; title: string; memo?: string; color: string }
 
 function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
@@ -43,15 +42,17 @@ export default function Home() {
   const [tab, setTab] = useState('today')
   const [streak, setStreak] = useState(0)
   const [history, setHistory] = useState<WorkoutRecord[]>([])
-  const [calEvents, setCalEvents] = useState<Record<string,CalEvent>>({})
+  const [calEvents, setCalEvents] = useState<CalEvent[]>([])
   const [prs, setPrs] = useState<PR[]>([])
   const [earnedBadges, setEarnedBadges] = useState<string[]>([])
   const [todayDone, setTodayDone] = useState(false)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [calYear, setCalYear] = useState(new Date().getFullYear())
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
-  const [selectedCell, setSelectedCell] = useState<string|null>(null)
-  const [editLabel, setEditLabel] = useState('')
+  const [selectedDate, setSelectedDate] = useState<string|null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [editEvent, setEditEvent] = useState<CalEvent|null>(null)
+  const [editTitle, setEditTitle] = useState('')
   const [editMemo, setEditMemo] = useState('')
   const [editColor, setEditColor] = useState(EVENT_COLORS[0])
   const [newExName, setNewExName] = useState('')
@@ -63,7 +64,7 @@ export default function Home() {
   const now = new Date()
   const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate()
   const todayKey = dateKey(todayY, todayM, todayD)
-  const todayEv = calEvents[todayKey]
+  const todayEvents = calEvents.filter(e => e.date === todayKey)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -86,58 +87,49 @@ export default function Home() {
     setLoading(true)
     const [
       { data: profile },
-      { data: plans },
+      { data: events },
       { data: workouts },
       { data: prData },
       { data: badges },
     ] = await Promise.all([
       supabase.from('profiles').select('streak').eq('id', uid).single(),
-      supabase.from('calendar_plans').select('date,muscle,memo').eq('user_id', uid),
+      supabase.from('calendar_events').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('workouts').select('*').eq('user_id', uid).order('created_at',{ascending:false}).limit(30),
       supabase.from('personal_records').select('exercise_name,max_weight').eq('user_id', uid),
       supabase.from('earned_badges').select('badge_id').eq('user_id', uid),
     ])
     if (profile) setStreak(profile.streak||0)
-    if (plans) {
-      const obj: Record<string,CalEvent> = {}
-      plans.forEach((p:any) => {
-        // muscle列をlabel/colorにマッピング（後方互換）
-        let label = '', color = EVENT_COLORS[0]
-        if (p.muscle) {
-          try { const parsed = JSON.parse(p.muscle); label=parsed.label||p.muscle; color=parsed.color||EVENT_COLORS[0] }
-          catch { label=p.muscle; color=EVENT_COLORS[0] }
-        }
-        obj[p.date] = { date: p.date, label, memo: p.memo||'', color }
-      })
-      setCalEvents(obj)
-    }
+    if (events) setCalEvents(events as CalEvent[])
     if (workouts) { setHistory(workouts); setTodayDone(workouts.some((w:any)=>w.date===todayKey)) }
     if (prData) setPrs(prData)
     if (badges) setEarnedBadges(badges.map((b:any)=>b.badge_id))
     setLoading(false)
   }
 
-  async function saveCalEvent(key: string) {
-    if (!user) return
-    const ev: CalEvent = { date: key, label: editLabel, memo: editMemo, color: editColor }
-    setCalEvents(prev => ({ ...prev, [key]: ev }))
-    const stored = JSON.stringify({ label: editLabel, color: editColor })
-    await supabase.from('calendar_plans').upsert({ user_id: user.id, date: key, muscle: stored, memo: editMemo||null }, { onConflict: 'user_id,date' })
-    setSelectedCell(null)
+  async function addEvent() {
+    if (!user || !editTitle.trim() || !selectedDate) return
+    const { data } = await supabase.from('calendar_events').insert({
+      user_id: user.id, date: selectedDate, title: editTitle.trim(), memo: editMemo||null, color: editColor
+    }).select().single()
+    if (data) setCalEvents(prev => [...prev, data as CalEvent])
+    setEditTitle(''); setEditMemo(''); setEditColor(EVENT_COLORS[0])
+    setShowAddModal(false)
   }
 
-  async function clearCalEvent(key: string) {
-    if (!user) return
-    const nev = { ...calEvents }; delete nev[key]
-    setCalEvents(nev); setSelectedCell(null)
-    await supabase.from('calendar_plans').delete().eq('user_id', user.id).eq('date', key)
+  async function deleteEvent(id: string) {
+    await supabase.from('calendar_events').delete().eq('id', id)
+    setCalEvents(prev => prev.filter(e => e.id !== id))
+    setEditEvent(null)
   }
 
   async function completeWorkout() {
     if (!user) return
     const vol = exercises.reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseFloat(st.w)||0)*(parseInt(st.r)||0),0),0)
     const totalSets = exercises.reduce((s,ex)=>s+ex.sets.filter(st=>st.done||st.r).length,0)
-    const { data: wo } = await supabase.from('workouts').insert({ user_id:user.id, date:todayKey, muscle:todayEv?.label||'記録', total_sets:totalSets, total_volume:Math.round(vol) }).select().single()
+    const label = todayEvents.length > 0 ? todayEvents[0].title : '記録'
+    const { data: wo } = await supabase.from('workouts').insert({
+      user_id:user.id, date:todayKey, muscle:label, total_sets:totalSets, total_volume:Math.round(vol)
+    }).select().single()
     if (wo) {
       const setRows:any[] = []
       exercises.forEach(ex=>ex.sets.forEach((s,i)=>{if(s.w||s.r) setRows.push({workout_id:wo.id,exercise_name:ex.name,set_number:i+1,weight:parseFloat(s.w)||0,reps:parseInt(s.r)||0})}))
@@ -161,11 +153,6 @@ export default function Home() {
     await loadData(user.id); setTab('today')
   }
 
-  function startWorkout() {
-    setExercises([{ id: Math.random().toString(), name: '', sets: [{ w:'', r:'', done:false }] }])
-    setTab('log')
-  }
-
   function startTimer(s: number) { setTimerMax(s); setTimerSec(s); setTimerOn(true) }
 
   const xp = history.length, lv = calcLv(xp), nl = nextLv(xp)
@@ -173,11 +160,11 @@ export default function Home() {
   const timerCol = timerSec<=10&&timerSec>0 ? '#ff4444' : timerSec===0 ? '#00ff87' : '#c8ff00'
   const timerR=54, timerCirc=2*Math.PI*timerR, timerDash=Math.round((timerMax>0?timerSec/timerMax:0)*timerCirc)
   const MONTHS=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
-
   const firstDay = new Date(calYear,calMonth,1).getDay()
   const daysInMonth = new Date(calYear,calMonth+1,0).getDate()
   const daysInPrev = new Date(calYear,calMonth,0).getDate()
   const totalCells = Math.ceil((firstDay+daysInMonth)/7)*7
+  const selectedEvents = selectedDate ? calEvents.filter(e=>e.date===selectedDate) : []
 
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
@@ -185,8 +172,8 @@ export default function Home() {
     :root{--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;--bg4:#222;--acc:#c8ff00;--text:#f0f0f0;--muted:#555;--muted2:#2a2a2a;}
     html,body{height:100%;overflow:hidden;}
     body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
-    .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);position:relative;}
-    .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px;flex-shrink:0;background:var(--bg);border-bottom:0.5px solid var(--muted2);}
+    .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px;flex-shrink:0;border-bottom:0.5px solid var(--muted2);}
     .logo{font-family:'Bebas Neue';font-size:22px;letter-spacing:2px;color:var(--acc);}
     .lv-chip{display:flex;align-items:center;gap:5px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer;}
     .out-btn{background:none;border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans';}
@@ -207,8 +194,6 @@ export default function Home() {
     .inp:focus{outline:none;border-color:var(--acc);}
     .text-inp{width:100%;font-size:13px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
     .text-inp:focus{border-color:var(--acc);}
-    .pill{padding:6px 12px;border-radius:20px;border:0.5px solid var(--muted2);background:var(--bg3);color:var(--muted);font-size:12px;cursor:pointer;font-family:'DM Sans';white-space:nowrap;}
-    .notif{border-radius:10px;padding:9px 13px;margin-bottom:7px;display:flex;align-items:center;gap:9px;font-size:12px;background:#071a07;border:0.5px solid #1a4a1a;}
     .stat-box{background:var(--bg2);border:0.5px solid var(--muted2);border-radius:10px;padding:10px;text-align:center;}
     .done-circle{width:24px;height:24px;border-radius:50%;border:0.5px solid var(--muted2);background:none;color:var(--muted);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;margin:0 auto;}
     .done-circle.on{background:var(--acc);border-color:var(--acc);color:#000;}
@@ -218,11 +203,18 @@ export default function Home() {
     .add-row button{background:var(--acc);color:#000;border:none;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:16px;font-weight:500;}
     .xp-track{flex:1;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
     .xp-fill{height:3px;border-radius:2px;}
-    .cal-cell{border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:3px;cursor:pointer;border:0.5px solid transparent;min-height:0;}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:flex-end;}
-    .modal-sheet{background:#161616;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:430px;margin:0 auto;max-height:80vh;overflow-y:auto;}
-    .color-dot{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;}
-    .color-dot.sel{border-color:white;}
+    .notif{border-radius:10px;padding:9px 13px;margin-bottom:7px;display:flex;align-items:center;gap:9px;font-size:12px;background:#071a07;border:0.5px solid #1a4a1a;}
+    .pill{padding:6px 12px;border-radius:20px;border:0.5px solid var(--muted2);background:var(--bg3);color:var(--muted);font-size:12px;cursor:pointer;font-family:'DM Sans';}
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-sheet{background:#161616;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:430px;max-height:85vh;overflow-y:auto;}
+    .color-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;}
+    .color-dot.sel{border-color:white;transform:scale(1.15);}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+    .cal-cell{border-radius:8px;cursor:pointer;border:0.5px solid transparent;display:flex;flex-direction:column;align-items:center;padding:4px 2px 3px;min-height:52px;}
+    .cal-cell:active{opacity:0.7;}
+    .event-pill{width:100%;border-radius:3px;height:4px;margin-top:2px;flex-shrink:0;}
+    .day-event-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:0.5px solid var(--muted2);}
+    .day-event-row:last-child{border-bottom:none;}
   `
 
   if (loading) return (
@@ -233,7 +225,6 @@ export default function Home() {
   return (
     <><style>{css}</style>
     <div className="wrap">
-      {/* トップバー */}
       <div className="topbar">
         <div className="logo">FITSTREAK</div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
@@ -245,7 +236,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 通知 */}
       {notifs.length>0&&(
         <div style={{padding:'8px 16px 0',flexShrink:0}}>
           {notifs.map((n,i)=>(
@@ -262,7 +252,6 @@ export default function Home() {
         {/* ===== 今日 ===== */}
         {tab==='today'&&(
         <div className="page">
-          {/* ストリーク */}
           <div style={{textAlign:'center',padding:'12px 0 10px'}}>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:72,lineHeight:1,color:'#c8ff00',letterSpacing:-2}}>{streak}</div>
             <div style={{fontSize:10,color:'var(--muted)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:-2}}>DAY STREAK</div>
@@ -279,43 +268,43 @@ export default function Home() {
               const offset=i-now.getDay()
               const dd=new Date(todayY,todayM,todayD+offset)
               const key=dateKey(dd.getFullYear(),dd.getMonth(),dd.getDate())
-              const ev=calEvents[key]
+              const evs=calEvents.filter(e=>e.date===key)
               const isToday=i===now.getDay()
               const isDone=history.some((h:any)=>h.date===key)
-              const col=ev?.color||null
               return(
                 <div key={i} style={{flex:1,textAlign:'center'}}>
                   <div style={{fontSize:9,color:i===0?'#ff6b6b':i===6?'#60a5fa':'var(--muted)',marginBottom:3}}>{d}</div>
-                  <div style={{width:'100%',aspectRatio:'1',borderRadius:8,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:500,background:isDone?'#c8ff00':col?`${col}22`:'var(--bg3)',border:isToday?`1.5px solid #c8ff00`:col?`0.5px solid ${col}55`:'0.5px solid transparent',color:isDone?'#000':isToday?'#c8ff00':'var(--muted)'}}>
-                    {isDone?'✓':ev?.label?ev.label.slice(0,2):d}
+                  <div style={{width:'100%',aspectRatio:'1',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:500,background:isDone?'#c8ff00':evs.length>0?`${evs[0].color}22`:'var(--bg3)',border:isToday?`1.5px solid #c8ff00`:evs.length>0?`0.5px solid ${evs[0].color}55`:'0.5px solid transparent',color:isDone?'#000':isToday?'#c8ff00':'var(--muted)'}}>
+                    {isDone?'✓':evs.length>0?evs[0].title.slice(0,2):d}
                   </div>
                 </div>
               )
             })}
           </div>
 
-          {/* 今日のイベント */}
           {todayDone?(
             <div className="card" style={{textAlign:'center',border:'0.5px solid #1a4a1a'}}>
               <div style={{fontSize:24,marginBottom:4}}>✅</div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:'#00ff87',letterSpacing:1}}>TODAY COMPLETE</div>
-              {todayEv?.label&&<div style={{fontSize:12,color:'#555',marginTop:4}}>{todayEv.label}</div>}
             </div>
-          ):!todayEv?(
+          ):todayEvents.length===0?(
             <div className="card" style={{textAlign:'center'}}>
               <div style={{fontSize:24,marginBottom:6}}>📅</div>
               <div style={{fontSize:13,color:'var(--muted)'}}>今日の予定が未設定です</div>
               <button className="btn" style={{width:'auto',padding:'9px 18px'}} onClick={()=>setTab('calendar')}>カレンダーで設定する</button>
             </div>
           ):(
-            <div className="card" style={{border:`0.5px solid ${todayEv.color||'#c8ff00'}44`}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <div style={{width:10,height:10,borderRadius:'50%',background:todayEv.color||'#c8ff00',flexShrink:0}}/>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:1}}>{todayEv.label||'予定あり'}</div>
-                <div style={{marginLeft:'auto',fontSize:10,padding:'2px 8px',borderRadius:20,background:`${todayEv.color||'#c8ff00'}22`,color:todayEv.color||'#c8ff00'}}>TODAY</div>
-              </div>
-              {todayEv.memo&&<div style={{fontSize:12,color:'#666',marginBottom:10}}>📝 {todayEv.memo}</div>}
-              <button className="btn" onClick={startWorkout}>▶ START WORKOUT</button>
+            <div>
+              {todayEvents.map(ev=>(
+                <div key={ev.id} className="card" style={{border:`0.5px solid ${ev.color}44`,marginBottom:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:ev.memo?6:0}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:ev.color,flexShrink:0}}/>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,flex:1}}>{ev.title}</div>
+                  </div>
+                  {ev.memo&&<div style={{fontSize:12,color:'#666',marginBottom:8}}>📝 {ev.memo}</div>}
+                </div>
+              ))}
+              <button className="btn" onClick={()=>{setExercises([{id:Math.random().toString(),name:'',sets:[{w:'',r:'',done:false}]}]);setTab('log')}}>▶ START WORKOUT</button>
             </div>
           )}
           <button className="btn-ghost" onClick={()=>setTab('calendar')}>📅 カレンダーで予定を管理</button>
@@ -327,57 +316,84 @@ export default function Home() {
         <div className="page">
           {/* ヘッダー */}
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-            <button onClick={()=>{setCalMonth(m=>{const nm=m-1;if(nm<0){setCalYear(y=>y-1);return 11}return nm});setSelectedCell(null)}}
+            <button onClick={()=>{setCalMonth(m=>{const nm=m-1;if(nm<0){setCalYear(y=>y-1);return 11}return nm});setSelectedDate(null)}}
               style={{width:32,height:32,borderRadius:8,border:'0.5px solid var(--muted2)',background:'var(--bg3)',color:'var(--text)',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1}}>{calYear}年 {MONTHS[calMonth]}</div>
-            <button onClick={()=>{setCalMonth(m=>{const nm=m+1;if(nm>11){setCalYear(y=>y+1);return 0}return nm});setSelectedCell(null)}}
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:1}}>{calYear}年 {MONTHS[calMonth]}</div>
+            <button onClick={()=>{setCalMonth(m=>{const nm=m+1;if(nm>11){setCalYear(y=>y+1);return 0}return nm});setSelectedDate(null)}}
               style={{width:32,height:32,borderRadius:8,border:'0.5px solid var(--muted2)',background:'var(--bg3)',color:'var(--text)',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
           </div>
 
-          {/* 曜日ヘッダー */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:4}}>
-            {DAYS_JP.map((d,i)=><div key={i} style={{textAlign:'center',fontSize:10,color:i===0?'#ff6b6b':i===6?'#60a5fa':'var(--muted)',padding:'2px 0'}}>{d}</div>)}
+          {/* 曜日 */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:5}}>
+            {DAYS_JP.map((d,i)=><div key={i} style={{textAlign:'center',fontSize:11,color:i===0?'#ff6b6b':i===6?'#60a5fa':'var(--muted)',padding:'3px 0',fontWeight:500}}>{d}</div>)}
           </div>
 
           {/* カレンダーグリッド */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+          <div className="cal-grid">
             {Array.from({length:totalCells},(_,i)=>{
               let d,m,y,isOther=false
               if(i<firstDay){d=daysInPrev-firstDay+i+1;m=calMonth-1;y=calYear;if(m<0){m=11;y--};isOther=true}
               else if(i>=firstDay+daysInMonth){d=i-firstDay-daysInMonth+1;m=calMonth+1;y=calYear;if(m>11){m=0;y++};isOther=true}
               else{d=i-firstDay+1;m=calMonth;y=calYear}
               const key=dateKey(y,m,d)
-              const ev=calEvents[key]
+              const evs=calEvents.filter(e=>e.date===key)
               const isToday=y===todayY&&m===todayM&&d===todayD
               const isDone=history.some((h:any)=>h.date===key)
-              const isSel=selectedCell===key
-              const col=ev?.color||null
+              const isSel=selectedDate===key
               const dow=i%7
               return(
-                <div key={i} className="cal-cell" onClick={()=>{
-                  if(isOther)return
-                  setSelectedCell(isSel?null:key)
-                  setEditLabel(calEvents[key]?.label||'')
-                  setEditMemo(calEvents[key]?.memo||'')
-                  setEditColor(calEvents[key]?.color||EVENT_COLORS[0])
-                }}
-                  style={{opacity:isOther?0.15:1,background:isDone?'#0d1f0d':isSel?'var(--bg4)':col?`${col}18`:'transparent',border:isToday?`1.5px solid #c8ff00`:isSel?`1px solid #c8ff00`:col?`0.5px solid ${col}44`:isDone?'0.5px solid #1a4a1a':'0.5px solid transparent',aspectRatio:'1'}}>
-                  <div style={{fontSize:10,color:dow===0&&!isOther?'#ff6b6b':dow===6&&!isOther?'#60a5fa':isToday?'#c8ff00':'var(--muted)',fontWeight:isToday?500:400,lineHeight:1,marginBottom:1}}>{d}</div>
-                  {isDone?<div style={{width:4,height:4,borderRadius:'50%',background:'#c8ff00'}}/>
-                  :col?<div style={{fontSize:6,color:col,lineHeight:1,textAlign:'center',width:'100%',overflow:'hidden',padding:'0 1px'}}>{(ev?.label||'').slice(0,3)}</div>
-                  :null}
+                <div key={i} className="cal-cell" onClick={()=>{if(isOther)return;setSelectedDate(isSel?null:key)}}
+                  style={{opacity:isOther?0.12:1,background:isSel?'var(--bg4)':isDone?'#0d1f0d':'transparent',border:isToday?`1.5px solid #c8ff00`:isSel?`1px solid #c8ff00`:isDone?'0.5px solid #1a4a1a':'0.5px solid transparent'}}>
+                  <div style={{fontSize:12,color:dow===0&&!isOther?'#ff6b6b':dow===6&&!isOther?'#60a5fa':isToday?'#c8ff00':'var(--muted)',fontWeight:isToday?600:400,lineHeight:1}}>{d}</div>
+                  {isDone&&<div style={{width:5,height:5,borderRadius:'50%',background:'#c8ff00',marginTop:3}}/>}
+                  {!isDone&&evs.slice(0,3).map((ev,ei)=>(
+                    <div key={ei} className="event-pill" style={{background:ev.color}}/>
+                  ))}
                 </div>
               )
             })}
           </div>
-          <div style={{fontSize:11,color:'var(--muted)',textAlign:'center',marginTop:8}}>日付をタップして予定を追加</div>
+
+          {/* 選択した日の予定 */}
+          {selectedDate&&(
+            <div style={{marginTop:14}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:'#c8ff00'}}>
+                  {selectedDate.split('-').slice(1).join('/')} ({DAYS_JP[new Date(selectedDate+'T00:00:00').getDay()]})
+                </div>
+                <button onClick={()=>{setShowAddModal(true);setEditTitle('');setEditMemo('');setEditColor(EVENT_COLORS[0])}}
+                  style={{background:'#c8ff00',color:'#000',border:'none',borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:500,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  + 予定追加
+                </button>
+              </div>
+              {selectedEvents.length===0?(
+                <div style={{textAlign:'center',padding:'1rem 0',color:'var(--muted)',fontSize:12}}>予定がありません。追加しましょう！</div>
+              ):(
+                <div className="card">
+                  {selectedEvents.map(ev=>(
+                    <div key={ev.id} className="day-event-row" onClick={()=>setEditEvent(ev)}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:ev.color,flexShrink:0}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500,color:'var(--text)'}}>{ev.title}</div>
+                        {ev.memo&&<div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{ev.memo}</div>}
+                      </div>
+                      <span style={{fontSize:18,color:'var(--muted)'}}>›</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {!selectedDate&&<div style={{fontSize:11,color:'var(--muted)',textAlign:'center',marginTop:10}}>日付をタップして予定を管理</div>}
         </div>
         )}
 
         {/* ===== 記録 ===== */}
         {tab==='log'&&(
         <div className="page">
-          <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#555',marginBottom:10}}>{todayEv?.label||'WORKOUT'}</div>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#555',marginBottom:10}}>
+            {todayEvents.length>0?todayEvents[0].title:'WORKOUT'}
+          </div>
           {exercises.map((ex,ei)=>(
             <div key={ex.id} className="card">
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -414,7 +430,7 @@ export default function Home() {
           ))}
 
           {/* タイマー */}
-          <div style={{textAlign:'center',padding:'12px 0'}}>
+          <div style={{textAlign:'center',padding:'10px 0'}}>
             <div style={{position:'relative',width:110,height:110,margin:'0 auto'}}>
               <svg style={{position:'absolute',top:0,left:0,transform:'rotate(-90deg)'}} width="110" height="110" viewBox="0 0 110 110">
                 <circle cx="55" cy="55" r={timerR-4} fill="none" stroke="#1a1a1a" strokeWidth="5"/>
@@ -568,46 +584,50 @@ export default function Home() {
         ))}
       </nav>
 
-      {/* ===== カレンダー編集モーダル ===== */}
-      {selectedCell&&(
-        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setSelectedCell(null)}}>
+      {/* ===== 予定追加モーダル ===== */}
+      {showAddModal&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setShowAddModal(false)}}>
           <div className="modal-sheet">
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#c8ff00'}}>
-                {selectedCell.split('-').slice(1).join('/')} ({DAYS_JP[new Date(selectedCell+'T00:00:00').getDay()]})
-              </div>
-              <button onClick={()=>setSelectedCell(null)} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:20}}>×</button>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#c8ff00'}}>予定を追加</div>
+              <button onClick={()=>setShowAddModal(false)} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:20}}>×</button>
             </div>
-
-            {/* タイトル */}
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>タイトル</div>
-            <input className="text-inp" placeholder="例：胸トレ、友達とランニング、休養日..." value={editLabel} onChange={e=>setEditLabel(e.target.value)} style={{marginBottom:12}}/>
-
-            {/* メモ */}
+            <input className="text-inp" placeholder="例：胸トレ、ランニング、休養日..." value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{marginBottom:12}}/>
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>メモ（任意）</div>
-            <textarea value={editMemo} onChange={e=>setEditMemo(e.target.value)} placeholder="詳細メモを入力..."
+            <textarea value={editMemo} onChange={e=>setEditMemo(e.target.value)} placeholder="詳細メモ..."
               style={{width:'100%',fontSize:13,background:'var(--bg3)',border:'0.5px solid var(--muted2)',borderRadius:10,padding:'9px 12px',color:'var(--text)',fontFamily:"'DM Sans'",outline:'none',resize:'none',marginBottom:14}} rows={2}/>
-
-            {/* カラー選択 */}
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>カラー</div>
             <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
               {EVENT_COLORS.map(c=>(
                 <button key={c} className={`color-dot ${editColor===c?'sel':''}`} style={{background:c}} onClick={()=>setEditColor(c)}/>
               ))}
             </div>
+            <button onClick={addEvent}
+              style={{width:'100%',background:'#c8ff00',color:'#000',border:'none',borderRadius:10,padding:'12px',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+              保存
+            </button>
+          </div>
+        </div>
+      )}
 
-            <div style={{display:'flex',gap:8}}>
-              <button onClick={()=>saveCalEvent(selectedCell)}
-                style={{flex:1,background:'#c8ff00',color:'#000',border:'none',borderRadius:10,padding:'12px',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                保存
-              </button>
-              {calEvents[selectedCell]&&(
-                <button onClick={()=>clearCalEvent(selectedCell)}
-                  style={{background:'none',border:'0.5px solid #ff444440',borderRadius:10,padding:'12px 14px',color:'#ff4444',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                  削除
-                </button>
-              )}
+      {/* ===== 予定詳細・削除モーダル ===== */}
+      {editEvent&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setEditEvent(null)}}>
+          <div className="modal-sheet">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:10,height:10,borderRadius:'50%',background:editEvent.color}}/>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'var(--text)'}}>{editEvent.title}</div>
+              </div>
+              <button onClick={()=>setEditEvent(null)} style={{background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:20}}>×</button>
             </div>
+            {editEvent.memo&&<div style={{fontSize:13,color:'#aaa',marginBottom:16,padding:'10px 12px',background:'var(--bg3)',borderRadius:10}}>📝 {editEvent.memo}</div>}
+            <div style={{fontSize:11,color:'var(--muted)',marginBottom:16}}>{editEvent.date.split('-').slice(1).join('/')}</div>
+            <button onClick={()=>deleteEvent(editEvent.id)}
+              style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'12px',fontSize:13,color:'#ff4444',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+              🗑 この予定を削除
+            </button>
           </div>
         </div>
       )}
