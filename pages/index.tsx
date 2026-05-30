@@ -61,6 +61,8 @@ export default function Home() {
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
 
+  const audioCtxRef = typeof window !== 'undefined' ? { current: null as any } : { current: null }
+
   const now = new Date()
   const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate()
   const todayKey = dateKey(todayY, todayM, todayD)
@@ -86,21 +88,25 @@ export default function Home() {
           setSwRunning(false)
           // Beep sound using Web Audio API
           try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+            const ctx = new AudioCtx()
             const beep = (freq: number, start: number, dur: number) => {
               const o = ctx.createOscillator()
               const g = ctx.createGain()
               o.connect(g); g.connect(ctx.destination)
               o.frequency.value = freq
-              g.gain.setValueAtTime(0.3, ctx.currentTime + start)
+              o.type = 'sine'
+              g.gain.setValueAtTime(0, ctx.currentTime + start)
+              g.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.01)
               g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
               o.start(ctx.currentTime + start)
-              o.stop(ctx.currentTime + start + dur)
+              o.stop(ctx.currentTime + start + dur + 0.05)
             }
-            beep(880, 0, 0.15)
-            beep(880, 0.18, 0.15)
-            beep(1100, 0.36, 0.3)
-          } catch(e) {}
+            beep(880, 0, 0.2)
+            beep(880, 0.25, 0.2)
+            beep(1320, 0.5, 0.4)
+            setTimeout(() => ctx.close(), 2000)
+          } catch(e) { console.log('Audio error:', e) }
           return 0
         }
         return prev - interval
@@ -485,7 +491,18 @@ export default function Home() {
               </button>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'center'}}>
-              <button onClick={()=>setSwRunning(r=>!r)}
+              <button onClick={()=>{
+                // Unlock AudioContext on user gesture
+                try {
+                  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+                  const ctx = new AudioCtx()
+                  const buf = ctx.createBuffer(1,1,22050)
+                  const src = ctx.createBufferSource()
+                  src.buffer = buf; src.connect(ctx.destination); src.start(0)
+                  setTimeout(()=>ctx.close(), 100)
+                } catch(e) {}
+                setSwRunning(r=>!r)
+              }}
                 style={{padding:'11px 32px',borderRadius:24,border:'none',background:swRunning?'rgba(255,68,68,0.15)':'rgba(200,255,0,0.15)',color:swRunning?'#ff5555':'#c8ff00',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans'",letterSpacing:'0.05em'}}>
                 {swRunning?'⏸ PAUSE':'▶ START'}
               </button>
