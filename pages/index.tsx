@@ -174,7 +174,7 @@ export default function Home() {
     }
     const newStreak = streak+1
     await supabase.from('profiles').update({streak:newStreak}).eq('id',user.id)
-    setStreak(newStreak); setTodayDone(true); setExercises([]); setTimerOn(false); setTimerSec(0)
+    setStreak(newStreak); setTodayDone(true); setExercises([]); setSwRunning(false); setSwTotal(swMs)
     if (msgs.length) { setNotifs(msgs); setTimeout(()=>setNotifs([]),5000) }
     await loadData(user.id); setTab('today')
   }
