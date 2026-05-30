@@ -540,6 +540,10 @@ export default function Home() {
             <div className="card" style={{textAlign:'center',border:'0.5px solid #1a4a1a'}}>
               <div style={{fontSize:24,marginBottom:4}}>✅</div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:'#00ff87',letterSpacing:1}}>TODAY COMPLETE</div>
+              <button onClick={cancelTodayWorkout}
+                style={{marginTop:10,background:'none',border:'0.5px solid #ff444433',borderRadius:8,padding:'6px 16px',fontSize:11,color:'#ff6666',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                取り消す
+              </button>
             </div>
           ):todayEvents.length===0?(
             <div className="card" style={{textAlign:'center'}}>
