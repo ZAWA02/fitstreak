@@ -27,7 +27,7 @@ interface SetRow { w: string; r: string; done: boolean; time?: string; dist?: st
 interface Exercise { id: string; name: string; sets: SetRow[]; mode: 'strength' | 'cardio' }
 interface WorkoutRecord { id: string; date: string; muscle: string; total_sets: number; total_volume: number }
 interface PR { exercise_name: string; max_weight: number }
-interface CalEvent { id: string; date: string; title: string; memo?: string; color: string }
+interface CalEvent { id: string; date: string; title: string; memo?: string; color: string; repeat_type?: string; repeat_id?: string; is_base?: boolean }
 
 function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
@@ -55,6 +55,8 @@ export default function Home() {
   const [editTitle, setEditTitle] = useState('')
   const [editMemo, setEditMemo] = useState('')
   const [editColor, setEditColor] = useState(EVENT_COLORS[0])
+  const [editRepeat, setEditRepeat] = useState<string>('none')
+  const [showEditChoiceModal, setShowEditChoiceModal] = useState<CalEvent|null>(null)
   const [newExName, setNewExName] = useState('')
   const [notifs, setNotifs] = useState<string[]>([])
   const [swTotal, setSwTotal] = useState(90000)  // ms remaining
@@ -163,18 +165,52 @@ export default function Home() {
 
   async function addEvent() {
     if (!user || !editTitle.trim() || !selectedDate) return
-    const { data } = await supabase.from('calendar_events').insert({
-      user_id: user.id, date: selectedDate, title: editTitle.trim(), memo: editMemo||null, color: editColor
-    }).select().single()
-    if (data) setCalEvents(prev => [...prev, data as CalEvent])
-    setEditTitle(''); setEditMemo(''); setEditColor(EVENT_COLORS[0])
+    const repeatId = editRepeat !== 'none' ? crypto.randomUUID() : null
+    const eventsToInsert: any[] = []
+
+    if (editRepeat === 'none') {
+      eventsToInsert.push({ user_id: user.id, date: selectedDate, title: editTitle.trim(), memo: editMemo||null, color: editColor, repeat_type: 'none', repeat_id: null, is_base: true })
+    } else {
+      // 基準日から12週 or 12ヶ月分生成
+      const base = new Date(selectedDate + 'T00:00:00')
+      const count = editRepeat === 'weekly' ? 12 : 12
+      for (let i = 0; i < count; i++) {
+        const d = new Date(base)
+        if (editRepeat === 'weekly') d.setDate(base.getDate() + i * 7)
+        else d.setMonth(base.getMonth() + i)
+        eventsToInsert.push({
+          user_id: user.id,
+          date: dateKey(d.getFullYear(), d.getMonth(), d.getDate()),
+          title: editTitle.trim(), memo: editMemo||null, color: editColor,
+          repeat_type: editRepeat, repeat_id: repeatId, is_base: i === 0
+        })
+      }
+    }
+
+    const { data } = await supabase.from('calendar_events').insert(eventsToInsert).select()
+    if (data) setCalEvents(prev => [...prev, ...(data as CalEvent[])])
+    setEditTitle(''); setEditMemo(''); setEditColor(EVENT_COLORS[0]); setEditRepeat('none')
     setShowAddModal(false)
   }
 
-  async function deleteEvent(id: string) {
-    await supabase.from('calendar_events').delete().eq('id', id)
-    setCalEvents(prev => prev.filter(e => e.id !== id))
+  async function deleteEvent(id: string, mode: 'single'|'following'|'all') {
+    const ev = calEvents.find(e => e.id === id)
+    if (!ev) return
+    if (mode === 'single' || !ev.repeat_id) {
+      await supabase.from('calendar_events').delete().eq('id', id)
+      setCalEvents(prev => prev.filter(e => e.id !== id))
+    } else if (mode === 'following') {
+      // この日以降の同じrepeat_idを削除
+      const targets = calEvents.filter(e => e.repeat_id === ev.repeat_id && e.date >= ev.date)
+      await supabase.from('calendar_events').delete().in('id', targets.map(e=>e.id))
+      setCalEvents(prev => prev.filter(e => !(e.repeat_id === ev.repeat_id && e.date >= ev.date)))
+    } else {
+      // 全部削除
+      await supabase.from('calendar_events').delete().eq('repeat_id', ev.repeat_id)
+      setCalEvents(prev => prev.filter(e => e.repeat_id !== ev.repeat_id))
+    }
     setEditEvent(null)
+    setShowEditChoiceModal(null)
   }
 
   async function completeWorkout() {
@@ -553,6 +589,7 @@ export default function Home() {
                   {!isDone&&evs.length>0&&(
                     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,width:'100%'}}>
                       {evs.slice(0,2).map((ev,ei)=>(
+                        <div key={ei} style={{display:'flex',alignItems:'center',gap:2,width:'100%'}}>
                         <div key={ei} style={{width:'70%',height:3,borderRadius:2,background:ev.color}}/>
                       ))}
                       {evs.length>2&&(
@@ -585,8 +622,11 @@ export default function Home() {
                     <div key={ev.id} className="day-event-row" onClick={()=>setEditEvent(ev)}>
                       <div style={{width:10,height:10,borderRadius:'50%',background:ev.color,flexShrink:0}}/>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:500,color:'var(--text)'}}>{ev.title}</div>
-                        {ev.memo&&<div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{ev.memo}</div>}
+                        <div style={{display:'flex',alignItems:'center',gap:5}}>
+                          <div style={{fontSize:13,fontWeight:500,color:'#fff'}}>{ev.title}</div>
+                          {ev.repeat_type&&ev.repeat_type!=='none'&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:10,background:'rgba(200,255,0,0.1)',color:'#c8ff00'}}>{ev.repeat_type==='weekly'?'毎週':'毎月'}</span>}
+                        </div>
+                        {ev.memo&&<div style={{fontSize:11,color:'#666',marginTop:2}}>{ev.memo}</div>}
                       </div>
                       <span style={{fontSize:18,color:'var(--muted)'}}>›</span>
                     </div>
@@ -1003,6 +1043,15 @@ export default function Home() {
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.08em'}}>メモ（任意）</div>
             <textarea value={editMemo} onChange={e=>setEditMemo(e.target.value)} placeholder="詳細メモ..."
               style={{width:'100%',fontSize:16,background:'var(--bg3)',border:'0.5px solid var(--muted2)',borderRadius:10,padding:'9px 12px',color:'var(--text)',fontFamily:"'DM Sans'",outline:'none',resize:'none',marginBottom:14}} rows={2}/>
+            <div style={{fontSize:10,color:'var(--muted)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.08em'}}>繰り返し</div>
+            <div style={{display:'flex',gap:6,marginBottom:14}}>
+              {[{v:'none',l:'繰り返しなし'},{v:'weekly',l:'毎週'},{v:'monthly',l:'毎月'}].map(r=>(
+                <button key={r.v} onClick={()=>setEditRepeat(r.v)}
+                  style={{flex:1,padding:'7px 4px',borderRadius:8,border:'none',background:editRepeat===r.v?'#c8ff00':'#1e1e1e',color:editRepeat===r.v?'#000':'#777',fontSize:11,fontWeight:editRepeat===r.v?600:400,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  {r.l}
+                </button>
+              ))}
+            </div>
             <div style={{fontSize:10,color:'var(--muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>カラー</div>
             <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
               {EVENT_COLORS.map(c=>(
@@ -1030,10 +1079,28 @@ export default function Home() {
             </div>
             {editEvent.memo&&<div style={{fontSize:13,color:'#aaa',marginBottom:16,padding:'10px 12px',background:'var(--bg3)',borderRadius:10}}>📝 {editEvent.memo}</div>}
             <div style={{fontSize:11,color:'var(--muted)',marginBottom:16}}>{editEvent.date.split('-').slice(1).join('/')}</div>
-            <button onClick={()=>deleteEvent(editEvent.id)}
-              style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'12px',fontSize:13,color:'#ff4444',cursor:'pointer',fontFamily:"'DM Sans'"}}>
-              🗑 この予定を削除
-            </button>
+            {editEvent.repeat_id ? (
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:11,color:'#777',marginBottom:2}}>繰り返し予定の削除</div>
+                <button onClick={()=>deleteEvent(editEvent.id,'single')}
+                  style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'11px',fontSize:13,color:'#ff4444',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  この予定のみ削除
+                </button>
+                <button onClick={()=>deleteEvent(editEvent.id,'following')}
+                  style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'11px',fontSize:13,color:'#ff4444',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  この予定以降を削除
+                </button>
+                <button onClick={()=>deleteEvent(editEvent.id,'all')}
+                  style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'11px',fontSize:13,color:'#ff8888',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                  すべての繰り返しを削除
+                </button>
+              </div>
+            ) : (
+              <button onClick={()=>deleteEvent(editEvent.id,'single')}
+                style={{width:'100%',background:'none',border:'0.5px solid #ff444466',borderRadius:10,padding:'12px',fontSize:13,color:'#ff4444',cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                🗑 この予定を削除
+              </button>
+            )}
           </div>
         </div>
       )}
