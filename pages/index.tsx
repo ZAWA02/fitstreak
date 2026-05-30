@@ -215,15 +215,26 @@ export default function Home() {
 
   async function completeWorkout() {
     if (!user) return
-    const vol = exercises.reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseFloat(st.w)||0)*(parseInt(st.r)||0),0),0)
-    const totalSets = exercises.reduce((s,ex)=>s+ex.sets.filter(st=>st.done||st.r).length,0)
+    const vol = exercises.filter(ex=>ex.mode==='strength').reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseFloat(st.w)||0)*(parseInt(st.r)||0),0),0)
+    const totalSets = exercises.reduce((s,ex)=>s+ex.sets.filter(st=>st.done||st.r||st.time||st.dist).length,0)
+    const totalTime = exercises.filter(ex=>ex.mode==='cardio').reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseFloat(st.time||'0')||0),0),0)
+    const totalDist = exercises.filter(ex=>ex.mode==='cardio').reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseFloat(st.dist||'0')||0),0),0)
+    const totalReps = exercises.filter(ex=>ex.mode==='strength').reduce((s,ex)=>s+ex.sets.reduce((s2,st)=>s2+(parseInt(st.r||'0')||0),0),0)
     const label = todayEvents.length > 0 ? todayEvents[0].title : '記録'
     const { data: wo } = await supabase.from('workouts').insert({
-      user_id:user.id, date:todayKey, muscle:label, total_sets:totalSets, total_volume:Math.round(vol)
+      user_id:user.id, date:todayKey, muscle:label,
+      total_sets:totalSets, total_volume:Math.round(vol),
+      total_time:totalTime||null, total_distance:totalDist||null, total_reps:totalReps||null
     }).select().single()
     if (wo) {
       const setRows:any[] = []
-      exercises.forEach(ex=>ex.sets.forEach((s,i)=>{if(s.w||s.r) setRows.push({workout_id:wo.id,exercise_name:ex.name,set_number:i+1,weight:parseFloat(s.w)||0,reps:parseInt(s.r)||0})}))
+      exercises.forEach(ex=>ex.sets.forEach((s,i)=>{
+        if(ex.mode==='cardio'){
+          if(s.time||s.dist) setRows.push({workout_id:wo.id,exercise_name:ex.name,set_number:i+1,weight:0,reps:0,time_minutes:parseFloat(s.time||'0')||0,distance_km:parseFloat(s.dist||'0')||0})
+        } else {
+          if(s.w||s.r) setRows.push({workout_id:wo.id,exercise_name:ex.name,set_number:i+1,weight:parseFloat(s.w)||0,reps:parseInt(s.r)||0,time_minutes:null,distance_km:null})
+        }
+      }))
       if (setRows.length) await supabase.from('workout_sets').insert(setRows)
     }
     const msgs:string[] = []
