@@ -589,7 +589,6 @@ export default function Home() {
                   {!isDone&&evs.length>0&&(
                     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,width:'100%'}}>
                       {evs.slice(0,2).map((ev,ei)=>(
-                        <div key={ei} style={{display:'flex',alignItems:'center',gap:2,width:'100%'}}>
                         <div key={ei} style={{width:'70%',height:3,borderRadius:2,background:ev.color}}/>
                       ))}
                       {evs.length>2&&(
