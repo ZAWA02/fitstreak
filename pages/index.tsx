@@ -193,11 +193,11 @@ export default function Home() {
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-    :root{--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;--bg4:#222;--acc:#c8ff00;--text:#f0f0f0;--muted:#888;--muted2:#2a2a2a;}
+    :root{--bg:#080808;--bg2:#141414;--bg3:#1e1e1e;--bg4:#272727;--acc:#c8ff00;--text:#ffffff;--sub:#b0b0b0;--muted:#777;--muted2:#333;}
     html,body{height:100%;overflow:hidden;} input,textarea,select{font-size:16px !important;}
     body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
     .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);}
-    .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px;flex-shrink:0;border-bottom:0.5px solid var(--muted2);}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 10px;flex-shrink:0;border-bottom:0.5px solid #2a2a2a;}
     .logo{font-family:'Bebas Neue';font-size:22px;letter-spacing:2px;color:var(--acc);}
     .lv-chip{display:flex;align-items:center;gap:5px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer;}
     .out-btn{background:none;border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans';}
@@ -205,15 +205,15 @@ export default function Home() {
     .page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:12px 16px 16px;}
     .page::-webkit-scrollbar{display:none;}
     .nav{display:flex;border-top:0.5px solid var(--muted2);background:var(--bg);flex-shrink:0;padding:6px 0;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));}
-    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border:none;background:none;color:#777;font-family:'DM Sans';cursor:pointer;}
+    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border:none;background:none;color:#666;font-family:'DM Sans';cursor:pointer;transition:color 0.15s;}
     .nav-btn.on{color:var(--acc);}
     .nav-btn svg{width:20px;height:20px;}
-    .nav-btn span{font-size:8px;letter-spacing:0.03em;}
-    .card{background:var(--bg2);border:0.5px solid var(--muted2);border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+    .nav-btn span{font-size:9px;letter-spacing:0.02em;}
+    .card{background:var(--bg2);border:0.5px solid #333;border-radius:14px;padding:14px 16px;margin-bottom:10px;}
     .btn{width:100%;background:var(--acc);color:#000;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans';margin-top:8px;}
     .btn:active{transform:scale(0.98);}
-    .btn-ghost{width:100%;background:none;border:0.5px solid var(--muted2);border-radius:10px;padding:9px;font-size:12px;color:var(--muted);cursor:pointer;font-family:'DM Sans';margin-top:6px;}
-    .sec{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:6px;}
+    .btn-ghost{width:100%;background:none;border:0.5px solid #444;border-radius:10px;padding:10px;font-size:13px;color:#aaa;cursor:pointer;font-family:'DM Sans';margin-top:6px;}
+    .sec{font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:500;}
     .inp{width:50px;text-align:center;font-size:12px;padding:4px;border:0.5px solid var(--muted2);border-radius:6px;background:var(--bg3);color:var(--text);font-family:'DM Sans';}
     .inp:focus{outline:none;border-color:var(--acc);}
     .text-inp{width:100%;font-size:16px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
@@ -277,7 +277,7 @@ export default function Home() {
         {tab==='today'&&(
         <div className="page">
           <div style={{textAlign:'center',padding:'12px 0 10px'}}>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:72,lineHeight:1,color:'#c8ff00',letterSpacing:-2}}>{streak}</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:72,lineHeight:1,color:'#c8ff00',letterSpacing:-2,textShadow:'0 0 40px rgba(200,255,0,0.3)'}}>{streak}</div>
             <div style={{fontSize:10,color:'var(--muted)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:-2}}>DAY STREAK</div>
             <div style={{display:'flex',alignItems:'center',gap:8,maxWidth:180,margin:'8px auto 0'}}>
               <span style={{fontSize:9,color:lv.color,whiteSpace:'nowrap'}}>LV.{lv.lv}</span>
@@ -427,9 +427,9 @@ export default function Home() {
               </div>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                 <thead><tr>
-                  <th style={{color:'var(--muted)',fontWeight:400,fontSize:10,padding:'2px 4px',textAlign:'center'}}>SET</th>
-                  <th style={{color:'var(--muted)',fontWeight:400,fontSize:10,textAlign:'center'}}>KG</th>
-                  <th style={{color:'var(--muted)',fontWeight:400,fontSize:10,textAlign:'center'}}>REPS</th>
+                  <th style={{color:'#999',fontWeight:500,fontSize:11,padding:'4px 4px',textAlign:'center',letterSpacing:'0.05em'}}>SET</th>
+                  <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center',letterSpacing:'0.05em'}}>KG</th>
+                  <th style={{color:'#999',fontWeight:500,fontSize:11,textAlign:'center',letterSpacing:'0.05em'}}>REPS</th>
                   <th/>
                 </tr></thead>
                 <tbody>
@@ -453,28 +453,32 @@ export default function Home() {
             </div>
           ))}
 
-          {/* ストップウォッチ */}
-          <div style={{textAlign:'center',padding:'10px 0',background:'var(--bg2)',borderRadius:12,marginBottom:10}}>
-            <div style={{fontSize:10,color:'#999',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8}}>REST TIMER</div>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:52,letterSpacing:3,lineHeight:1,color:swRunning?'#c8ff00':swMs===0&&swTotal>0?'#00ff87':'#f0f0f0',marginBottom:4}}>
-              {String(Math.floor(swTotal/60000)).padStart(2,'0')}:{String(Math.floor((swTotal%60000)/1000)).padStart(2,'0')}<span style={{fontSize:24,color:'#555'}}>.{String(Math.floor((swTotal%1000)/10)).padStart(2,'0')}</span>
+          {/* REST TIMER */}
+          <div style={{textAlign:'center',padding:'14px 12px',background:'#141414',borderRadius:14,marginBottom:10,border:'0.5px solid #2a2a2a'}}>
+            <div style={{fontSize:11,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,fontWeight:500}}>REST TIMER</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:56,letterSpacing:3,lineHeight:1,color:swRunning?'#c8ff00':swTotal===0&&swMs>0?'#00ff87':'#ffffff',marginBottom:12}}>
+              {String(Math.floor(swTotal/60000)).padStart(2,'0')}:{String(Math.floor((swTotal%60000)/1000)).padStart(2,'0')}<span style={{fontSize:26,color:'#555',letterSpacing:1}}>.{String(Math.floor((swTotal%1000)/10)).padStart(2,'0')}</span>
             </div>
-            <div style={{display:'flex',gap:6,justifyContent:'center',marginBottom:8}}>
-              {[30,60,90,120,180].map(s=>(
-                <button key={s} onClick={()=>{setSwTotal(s*1000);setSwRunning(false);setSwMs(s*1000)}}
-                  style={{padding:'4px 8px',borderRadius:20,border:'0.5px solid var(--muted2)',background:swMs===s*1000?'#c8ff0022':'var(--bg3)',color:swMs===s*1000?'#c8ff00':'#777',fontSize:10,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                  {s}s
+            <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap',marginBottom:12}}>
+              {[{l:'+30分',v:1800},{l:'+1分',v:60},{l:'+30秒',v:30},{l:'+10秒',v:10}].map(btn=>(
+                <button key={btn.l} onClick={()=>{setSwRunning(false);setSwTotal(p=>p+btn.v*1000);setSwMs(p=>p+btn.v*1000)}}
+                  style={{padding:'7px 13px',borderRadius:20,border:'0.5px solid #404040',background:'#1e1e1e',color:'#ddd',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'",fontWeight:500}}>
+                  {btn.l}
                 </button>
               ))}
+              <button onClick={()=>{setSwRunning(false);setSwTotal(0);setSwMs(0)}}
+                style={{padding:'7px 13px',borderRadius:20,border:'0.5px solid #ff444444',background:'none',color:'#ff6666',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                クリア
+              </button>
             </div>
-            <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+            <div style={{display:'flex',gap:10,justifyContent:'center'}}>
               <button onClick={()=>setSwRunning(r=>!r)}
-                style={{padding:'8px 24px',borderRadius:20,border:'none',background:swRunning?'#ff444422':'#c8ff0022',color:swRunning?'#ff4444':'#c8ff00',fontSize:13,fontWeight:500,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                style={{padding:'11px 32px',borderRadius:24,border:'none',background:swRunning?'rgba(255,68,68,0.15)':'rgba(200,255,0,0.15)',color:swRunning?'#ff5555':'#c8ff00',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans'",letterSpacing:'0.05em'}}>
                 {swRunning?'⏸ PAUSE':'▶ START'}
               </button>
               <button onClick={()=>{setSwRunning(false);setSwTotal(swMs)}}
-                style={{padding:'8px 18px',borderRadius:20,border:'0.5px solid var(--muted2)',background:'var(--bg3)',color:'#888',fontSize:13,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                ↺ RESET
+                style={{padding:'11px 20px',borderRadius:24,border:'0.5px solid #404040',background:'#1e1e1e',color:'#aaa',fontSize:18,cursor:'pointer',fontFamily:"'DM Sans'"}}>
+                ↺
               </button>
             </div>
           </div>
@@ -515,7 +519,7 @@ export default function Home() {
                 <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'0.5px solid #111'}}>
                   <div style={{width:5,height:5,borderRadius:'50%',background:'#c8ff00',flexShrink:0}}/>
                   <div style={{fontSize:10,color:'#444',minWidth:48}}>{String(h.date).slice(5).replace('-','/')}</div>
-                  <div style={{flex:1,fontSize:12,color:'#aaa'}}>{h.muscle}</div>
+                  <div style={{flex:1,fontSize:12,color:'#ccc'}}>{h.muscle}</div>
                   <div style={{fontSize:12,fontWeight:500,color:'#c8ff00'}}>{(h.total_volume||0).toLocaleString()}kg</div>
                 </div>
               ))}
@@ -553,7 +557,7 @@ export default function Home() {
               [...prs].sort((a,b)=>b.max_weight-a.max_weight).slice(0,5).map((p,i)=>(
                 <div key={p.exercise_name} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:'0.5px solid var(--muted2)'}}>
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:16,width:20,color:i===0?'#c8ff00':i===1?'#888':i===2?'#7a5c2e':'#333'}}>{i+1}</div>
-                  <div style={{flex:1,fontSize:12,color:'#ccc'}}>{p.exercise_name}</div>
+                  <div style={{flex:1,fontSize:13,color:'#e0e0e0'}}>{p.exercise_name}</div>
                   <div style={{fontSize:13,fontWeight:500,color:'#c8ff00'}}>{p.max_weight}kg</div>
                 </div>
               ))}
