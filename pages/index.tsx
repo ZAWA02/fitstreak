@@ -61,7 +61,6 @@ export default function Home() {
   const [swMs, setSwMs] = useState(90000)       // preset ms
   const [swRunning, setSwRunning] = useState(false)
   const [isAlarm, setIsAlarm] = useState(false)
-  const alarmRef = { current: null as any }
 
   const audioCtxRef = typeof window !== 'undefined' ? { current: null as any } : { current: null }
 
@@ -114,7 +113,7 @@ export default function Home() {
             } catch(e) {}
           }
           playAlarm()
-          alarmRef.current = setInterval(playAlarm, 2000)
+          ;(window as any).__alarmInterval = setInterval(playAlarm, 2000)
           return 0
         }
         return prev - interval
@@ -199,7 +198,7 @@ export default function Home() {
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
   function stopAlarm() {
     setIsAlarm(false)
-    if (alarmRef.current) { clearInterval(alarmRef.current); alarmRef.current = null }
+    if ((window as any).__alarmInterval) { clearInterval((window as any).__alarmInterval); (window as any).__alarmInterval = null }
     setSwTotal(swMs)
     setSwRunning(false)
   }
