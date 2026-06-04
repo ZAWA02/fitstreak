@@ -43,36 +43,54 @@ export default function Login() {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: 375, padding: '60px 24px' }}>
-      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 40, letterSpacing: 3, color: 'var(--accent)', marginBottom: 4 }}>FITSTREAK</div>
-      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 36 }}>
-        {isSignUp ? 'アカウントを作成する' : 'ログインする'}
-      </div>
-
-      {isSignUp && (
-        <input value={username} onChange={e => setUsername(e.target.value)}
-          placeholder="ユーザー名（例: taro_gym）" style={inp} />
-      )}
-      <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-        placeholder="メールアドレス" style={inp} />
-      <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-        placeholder="パスワード（6文字以上）" style={{ ...inp, marginBottom: 20 }} />
-
-      {error && (
-        <div style={{ fontSize: 12, color: '#ff4444', marginBottom: 12, padding: '8px 12px', background: '#2a0a0a', borderRadius: 8 }}>
-          {error}
+    <div style={{
+      width: '100%', height: '100dvh',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '0 24px',
+    }}>
+      <div style={{ width: '100%', maxWidth: 375 }}>
+        {/* ロゴ */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 46, letterSpacing: 4, color: 'var(--accent)', lineHeight: 1 }}>FITSTREAK</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, letterSpacing: '0.05em' }}>
+            {isSignUp ? 'アカウントを作成する' : 'ようこそ。今日も続けよう。'}
+          </div>
         </div>
-      )}
 
-      <button onClick={handleAuth} disabled={loading}
-        style={{ width: '100%', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 8, padding: 14, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans'", marginBottom: 16 }}>
-        {loading ? '処理中...' : isSignUp ? 'アカウント作成' : 'ログイン'}
-      </button>
+        {/* フォーム */}
+        {isSignUp && (
+          <input value={username} onChange={e => setUsername(e.target.value)}
+            placeholder="ユーザー名（例: taro_gym）" style={inp} />
+        )}
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+          placeholder="メールアドレス" style={inp} />
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+          placeholder="パスワード（6文字以上）" style={{ ...inp, marginBottom: 20 }} />
 
-      <button onClick={() => { setIsSignUp(!isSignUp); setError('') }}
-        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', width: '100%' }}>
-        {isSignUp ? 'すでにアカウントをお持ちの方はこちら' : 'アカウントを新規作成する'}
-      </button>
+        {error && (
+          <div style={{ fontSize: 12, color: '#ff4444', marginBottom: 12, padding: '8px 12px', background: '#2a0a0a', borderRadius: 8 }}>
+            {error}
+          </div>
+        )}
+
+        <button onClick={handleAuth} disabled={loading}
+          style={{ width: '100%', background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 10, padding: 14, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans'", marginBottom: 12, opacity: loading ? 0.7 : 1, transition: 'opacity 0.2s' }}>
+          {loading ? '処理中...' : isSignUp ? 'アカウント作成' : 'ログイン'}
+        </button>
+
+        <button onClick={() => { setIsSignUp(!isSignUp); setError('') }}
+          style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', width: '100%', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+          {isSignUp ? 'すでにアカウントをお持ちの方' : 'アカウントを新規作成する'}
+        </button>
+
+        {/* ボトムタグライン */}
+        <div style={{ marginTop: 52, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: '#2a2a2a', textTransform: 'uppercase', letterSpacing: '0.25em' }}>
+            TRACK · STREAK · IMPROVE
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

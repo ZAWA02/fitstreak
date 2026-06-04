@@ -77,6 +77,12 @@ export default function Home() {
   const [gpsDistance, setGpsDistance] = useState<Record<string,number>>({}) // exId -> meters
   const [gpsWatchId, setGpsWatchId] = useState<number|null>(null)
   const gpsLastPos = { current: null as GeolocationPosition|null }
+  const [exerciseSets, setExerciseSets] = useState<{exercise_name:string;reps:number;weight:number;workout_id:string;date:string}[]>([])
+  const [selectedRepsEx, setSelectedRepsEx] = useState('')
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [profileSubTab, setProfileSubTab] = useState<'stats'|'badges'|'friends'>('stats')
+  const [todos, setTodos] = useState<{id:string;text:string;done:boolean;date:string}[]>([])
+  const [newTodo, setNewTodo] = useState('')
 
   const audioCtxRef = typeof window !== 'undefined' ? { current: null as any } : { current: null }
 
@@ -105,6 +111,7 @@ export default function Home() {
           setSwRunning(false)
           // Beep sound using Web Audio API
           setIsAlarm(true)
+          try { if(navigator.vibrate) navigator.vibrate([300,100,300,100,500]) } catch(e){}
           // Start repeating alarm
           const playAlarm = () => {
             try {
@@ -140,24 +147,44 @@ export default function Home() {
 
   async function loadData(uid: string) {
     setLoading(true)
+    const today = dateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
     const [
       { data: profile },
       { data: events },
       { data: workouts },
       { data: prData },
       { data: badges },
+      { data: todayTodos },
     ] = await Promise.all([
       supabase.from('profiles').select('streak,username,avatar_url').eq('id', uid).single(),
       supabase.from('calendar_events').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('workouts').select('id,date,muscle,total_sets,total_volume,total_time,total_distance,total_reps').eq('user_id', uid).order('created_at',{ascending:false}).limit(30),
       supabase.from('personal_records').select('exercise_name,max_weight').eq('user_id', uid),
       supabase.from('earned_badges').select('badge_id').eq('user_id', uid),
+      supabase.from('todos').select('id,text,done,date').eq('user_id', uid).eq('date', today).order('created_at'),
     ])
     if (profile) { setStreak(profile.streak||0); setProfile(profile) }
     if (events) setCalEvents(events as CalEvent[])
-    if (workouts) { setHistory(workouts); setTodayDone(workouts.some((w:any)=>w.date===todayKey)) }
+    if (workouts) {
+      setHistory(workouts)
+      setTodayDone(workouts.some((w:any)=>w.date===todayKey))
+      if (workouts.length > 0) {
+        const wids = workouts.map((w:any)=>w.id)
+        const { data: sets } = await supabase
+          .from('workout_sets')
+          .select('exercise_name,reps,weight,workout_id')
+          .in('workout_id', wids)
+        if (sets) {
+          setExerciseSets(sets.map((s:any)=>{
+            const w = workouts.find((x:any)=>x.id===s.workout_id)
+            return {...s, date: w?.date||''}
+          }))
+        }
+      }
+    }
     if (prData) setPrs(prData)
     if (badges) setEarnedBadges(badges.map((b:any)=>b.badge_id))
+    if (todayTodos) setTodos(todayTodos)
     // load friends
     await loadFriends(uid)
     setLoading(false)
@@ -257,8 +284,25 @@ export default function Home() {
 
   const xp = history.length, lv = calcLv(xp), nl = nextLv(xp)
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
-  // stopwatch colors
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
+  const repsExNames = [...new Set(exerciseSets.filter(s=>s.reps>0).map(s=>s.exercise_name))].slice(0,6)
+  const activeRepsEx = selectedRepsEx || repsExNames[0] || ''
+  const weekStart = new Date(todayY, todayM, todayD - now.getDay() + weekOffset * 7)
+  const weekDays = Array.from({length:7}, (_,i) => {
+    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i)
+    return { key: dateKey(d.getFullYear(), d.getMonth(), d.getDate()), day: i }
+  })
+  const weekVolumes  = weekDays.map(({key})=>history.find((h:any)=>h.date===key)?.total_volume||0)
+  const weekDistances= weekDays.map(({key})=>history.find((h:any)=>h.date===key)?.total_distance||0)
+  const weekTimes    = weekDays.map(({key})=>history.find((h:any)=>h.date===key)?.total_time||0)
+  const maxWeekVol  = Math.max(...weekVolumes,1)
+  const maxWeekDist = Math.max(...weekDistances,1)
+  const maxWeekTime = Math.max(...weekTimes,1)
+  const weekReps = weekDays.map(({key})=>{
+    const dr=exerciseSets.filter(s=>s.exercise_name===activeRepsEx&&s.date===key&&s.reps>0)
+    return dr.length>0?Math.max(...dr.map(s=>s.reps)):0
+  })
+  const maxWeekReps = Math.max(...weekReps,1)
   async function uploadAvatar(file: File) {
     if (!user) return
     setUploadingAvatar(true)
@@ -416,11 +460,29 @@ export default function Home() {
     await loadData(user.id)
   }
 
+  async function addTodo() {
+    if (!user || !newTodo.trim()) return
+    const text = newTodo.trim()
+    setNewTodo('')
+    const { data } = await supabase.from('todos').insert({
+      user_id: user.id, date: todayKey, text, done: false
+    }).select('id,text,done,date').single()
+    if (data) setTodos(ts=>[...ts, data])
+  }
+
   function stopAlarm() {
     setIsAlarm(false)
     if ((window as any).__alarmInterval) { clearInterval((window as any).__alarmInterval); (window as any).__alarmInterval = null }
     setSwTotal(swMs)
     setSwRunning(false)
+  }
+
+  function getPrevSets(exName: string) {
+    const all = exerciseSets.filter(s=>s.exercise_name===exName&&(s.weight>0||s.reps>0)).sort((a,b)=>b.date.localeCompare(a.date))
+    if (all.length===0) return null
+    const lastDate = all[0].date===todayKey ? (all.find(s=>s.date!==todayKey)?.date||null) : all[0].date
+    if (!lastDate) return null
+    return all.filter(s=>s.date===lastDate)
   }
 
   const MONTHS=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
@@ -430,65 +492,11 @@ export default function Home() {
   const totalCells = Math.ceil((firstDay+daysInMonth)/7)*7
   const selectedEvents = selectedDate ? calEvents.filter(e=>e.date===selectedDate) : []
 
-  const css = `
-    @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
-    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-    :root{--bg:#080808;--bg2:#141414;--bg3:#1e1e1e;--bg4:#272727;--acc:#c8ff00;--text:#ffffff;--sub:#b0b0b0;--muted:#777;--muted2:#333;}
-    html,body{height:100%;overflow:hidden;} input,textarea,select{font-size:16px !important;}
-    body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
-    .wrap{display:flex;flex-direction:column;height:100dvh;max-width:430px;margin:0 auto;background:var(--bg);}
-    .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 10px;flex-shrink:0;border-bottom:0.5px solid #2a2a2a;}
-    .logo{font-family:'Bebas Neue';font-size:22px;letter-spacing:2px;color:var(--acc);}
-    .lv-chip{display:flex;align-items:center;gap:5px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer;}
-    .out-btn{background:none;border:0.5px solid var(--muted2);border-radius:20px;padding:4px 10px;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans';}
-    .content{flex:1;overflow:hidden;position:relative;}
-    .page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:12px 16px 16px;}
-    .page::-webkit-scrollbar{display:none;}
-    .nav{display:flex;border-top:0.5px solid var(--muted2);background:var(--bg);flex-shrink:0;padding:6px 0;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));}
-    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border:none;background:none;color:#666;font-family:'DM Sans';cursor:pointer;transition:color 0.15s;}
-    .nav-btn.on{color:var(--acc);}
-    .nav-btn svg{width:20px;height:20px;}
-    .nav-btn span{font-size:9px;letter-spacing:0.02em;}
-    .card{background:var(--bg2);border:0.5px solid #333;border-radius:14px;padding:14px 16px;margin-bottom:10px;}
-    .btn{width:100%;background:var(--acc);color:#000;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans';margin-top:8px;}
-    .btn:active{transform:scale(0.98);}
-    .btn-ghost{width:100%;background:none;border:0.5px solid #444;border-radius:10px;padding:10px;font-size:13px;color:#aaa;cursor:pointer;font-family:'DM Sans';margin-top:6px;}
-    .sec{font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;font-weight:500;}
-    .inp{width:50px;text-align:center;font-size:12px;padding:4px;border:0.5px solid var(--muted2);border-radius:6px;background:var(--bg3);color:var(--text);font-family:'DM Sans';}
-    .inp:focus{outline:none;border-color:var(--acc);}
-    .text-inp{width:100%;font-size:16px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
-    .text-inp:focus{border-color:var(--acc);}
-    .stat-box{background:var(--bg2);border:0.5px solid var(--muted2);border-radius:10px;padding:10px;text-align:center;}
-    .done-circle{width:24px;height:24px;border-radius:50%;border:0.5px solid var(--muted2);background:none;color:var(--muted);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;margin:0 auto;}
-    .done-circle.on{background:var(--acc);border-color:var(--acc);color:#000;}
-    .add-row{display:flex;gap:8px;margin-bottom:8px;}
-    .add-row input{flex:1;font-size:13px;background:var(--bg3);border:0.5px solid var(--muted2);border-radius:10px;padding:9px 12px;color:var(--text);font-family:'DM Sans';outline:none;}
-    .add-row input:focus{border-color:var(--acc);}
-    .add-row button{background:var(--acc);color:#000;border:none;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:16px;font-weight:500;}
-    .xp-track{flex:1;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;}
-    .xp-fill{height:3px;border-radius:2px;}
-    .notif{border-radius:10px;padding:9px 13px;margin-bottom:7px;display:flex;align-items:center;gap:9px;font-size:12px;background:#071a07;border:0.5px solid #1a4a1a;}
-    .pill{padding:6px 12px;border-radius:20px;border:0.5px solid var(--muted2);background:var(--bg3);color:var(--muted);font-size:12px;cursor:pointer;font-family:'DM Sans';}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
-    .modal-sheet{background:#161616;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:430px;max-height:85vh;overflow-y:auto;}
-    .color-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;}
-    .color-dot.sel{border-color:white;transform:scale(1.15);}
-    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.05)}}
-    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-    .cal-cell{border-radius:8px;cursor:pointer;border:0.5px solid transparent;display:flex;flex-direction:column;align-items:center;padding:4px 2px 3px;min-height:52px;}
-    .cal-cell:active{opacity:0.7;}
-    .event-pill{width:100%;border-radius:3px;height:4px;margin-top:2px;flex-shrink:0;}
-    .day-event-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:0.5px solid var(--muted2);}
-    .day-event-row:last-child{border-bottom:none;}
-  `
-
   if (loading) return (
-    <><style>{css}</style>
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',color:'#c8ff00',fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:3}}>FITSTREAK</div></>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',color:'#c8ff00',fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:3}}>FITSTREAK</div>
   )
 
   return (
-    <><style>{css}</style>
     <div className="wrap">
       <div className="topbar">
         <div className="logo">FITSTREAK</div>
@@ -547,6 +555,43 @@ export default function Home() {
             })}
           </div>
 
+          {/* 今日のやることリスト */}
+          <div className="card" style={{marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <div style={{fontSize:11,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:500}}>今日のやること</div>
+              <div style={{fontSize:10,color:'#444'}}>{todos.filter(t=>t.done).length}/{todos.length}</div>
+            </div>
+            {todos.length===0&&(
+              <div style={{fontSize:12,color:'#444',textAlign:'center',padding:'4px 0 8px'}}>タスクを追加しよう</div>
+            )}
+            {todos.map(t=>(
+              <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:'0.5px solid #1a1a1a'}}>
+                <button onClick={async()=>{
+                  const next=!t.done
+                  setTodos(ts=>ts.map(x=>x.id===t.id?{...x,done:next}:x))
+                  await supabase.from('todos').update({done:next}).eq('id',t.id)
+                }}
+                  style={{width:20,height:20,borderRadius:6,border:`1.5px solid ${t.done?'#c8ff00':'#444'}`,background:t.done?'#c8ff00':'transparent',color:'#000',cursor:'pointer',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,padding:0}}>
+                  {t.done&&'✓'}
+                </button>
+                <span style={{flex:1,fontSize:13,color:t.done?'#444':'#ddd',textDecoration:t.done?'line-through':'none'}}>{t.text}</span>
+                <button onClick={async()=>{
+                  setTodos(ts=>ts.filter(x=>x.id!==t.id))
+                  await supabase.from('todos').delete().eq('id',t.id)
+                }}
+                  style={{background:'none',border:'none',color:'#333',cursor:'pointer',fontSize:16,padding:'0 2px',lineHeight:1,flexShrink:0}}>×</button>
+              </div>
+            ))}
+            <div style={{display:'flex',gap:8,marginTop:10}}>
+              <input value={newTodo} onChange={e=>setNewTodo(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&newTodo.trim())addTodo()}}
+                placeholder="タスクを入力..."
+                style={{flex:1,fontSize:14,background:'#1a1a1a',border:'0.5px solid #333',borderRadius:8,padding:'7px 10px',color:'#fff',fontFamily:"'DM Sans'",outline:'none'}}/>
+              <button onClick={addTodo}
+                style={{background:'#c8ff00',color:'#000',border:'none',borderRadius:8,padding:'7px 12px',cursor:'pointer',fontSize:16,fontWeight:600,fontFamily:"'DM Sans'"}}>+</button>
+            </div>
+          </div>
+
           {todayDone?(
             <div className="card" style={{textAlign:'center',border:'0.5px solid #1a4a1a'}}>
               <div style={{fontSize:24,marginBottom:4}}>✅</div>
@@ -564,15 +609,23 @@ export default function Home() {
             </div>
           ):(
             <div>
-              {todayEvents.map(ev=>(
+              {todayEvents.map(ev=>{
+                const lastW = history.find((h:any)=>h.muscle===ev.title)
+                return (
                 <div key={ev.id} className="card" style={{border:`0.5px solid ${ev.color}44`,marginBottom:8}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:ev.memo?6:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:ev.memo?4:0}}>
                     <div style={{width:8,height:8,borderRadius:'50%',background:ev.color,flexShrink:0}}/>
                     <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,flex:1}}>{ev.title}</div>
                   </div>
-                  {ev.memo&&<div style={{fontSize:12,color:'#666',marginBottom:8}}>📝 {ev.memo}</div>}
+                  {ev.memo&&<div style={{fontSize:12,color:'#666',marginBottom:4}}>📝 {ev.memo}</div>}
+                  {lastW&&(
+                    <div style={{fontSize:10,color:'#444',paddingTop:4,borderTop:'0.5px solid #1e1e1e'}}>
+                      前回 ({String(lastW.date).slice(5).replace('-','/')}): {[(lastW.total_volume||0)>0&&`${(lastW.total_volume||0).toLocaleString()}kg`,(lastW.total_distance||0)>0&&`${parseFloat(String(lastW.total_distance||0)).toFixed(1)}km`,(lastW.total_reps||0)>0&&!(lastW.total_volume)&&`${lastW.total_reps}reps`].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
                 </div>
-              ))}
+                )
+              })}
               <button className="btn" onClick={()=>{setExercises([{id:Math.random().toString(),name:'',sets:[{w:'',r:'',done:false}],mode:'strength'}]);setTab('log')}}>▶ START WORKOUT</button>
             </div>
           )}
@@ -685,26 +738,32 @@ export default function Home() {
           <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:1,color:'#555',marginBottom:10}}>
             {todayEvents.length>0?todayEvents[0].title:'WORKOUT'}
           </div>
-          {exercises.length===0&&(
-            <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:12,padding:'14px',marginBottom:12,textAlign:'center'}}>
-              <div style={{fontSize:13,color:'#aaa',marginBottom:10}}>種目を追加して記録を始めよう</div>
-              <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap'}}>
-                {['ベンチプレス','スクワット','デッドリフト','ランニング','腕立て'].map(name=>(
+          <div style={{background:'var(--bg2)',border:'0.5px solid #333',borderRadius:12,padding:'12px',marginBottom:12}}>
+            <div style={{fontSize:11,color:'#666',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>クイック追加</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {['ベンチプレス','スクワット','デッドリフト','腕立て伏せ','懸垂','ランニング'].map(name=>{
+                const prev = getPrevSets(name)
+                const hint = prev && prev.length > 0 ? (prev[0].weight > 0 ? `前回 ${prev[0].weight}kg` : `前回 ${prev[0].reps}reps`) : null
+                return (
                   <button key={name} onClick={()=>setExercises(exs=>[...exs,{id:Math.random().toString(),name,sets:[{w:'',r:'',done:false}],mode:name==='ランニング'?'cardio':'strength'}])}
-                    style={{padding:'6px 12px',borderRadius:20,border:'0.5px solid #333',background:'#1e1e1e',color:'#ccc',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                    {name}
+                    style={{padding:'6px 12px',borderRadius:20,border:'0.5px solid #333',background:'#1e1e1e',color:'#ccc',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'",display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                    <span>{name}</span>
+                    {hint&&<span style={{fontSize:9,color:'#555'}}>{hint}</span>}
                   </button>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          )}
+          </div>
           {exercises.map((ex,ei)=>(
             <div key={ex.id} className="card">
               {/* 種目名 */}
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                 <input value={ex.name} onChange={e=>setExercises(exs=>exs.map((x,xi)=>xi===ei?{...x,name:e.target.value}:x))}
                   placeholder="種目名を入力..." className="text-inp" style={{flex:1,fontSize:13}}/>
+                <button onClick={()=>setExercises(exs=>exs.filter((_,xi)=>xi!==ei))}
+                  style={{background:'none',border:'none',color:'#444',cursor:'pointer',fontSize:18,padding:'0 4px',lineHeight:1}}>×</button>
               </div>
+              {ex.name&&(()=>{const prev=getPrevSets(ex.name);if(!prev||prev.length===0)return null;const line=prev.map(s=>s.weight>0?`${s.weight}kg×${s.reps}`:s.reps>0?`${s.reps}reps`:'').filter(Boolean).join(' / ');return(<div style={{fontSize:10,color:'#555',marginBottom:8,paddingLeft:2}}>前回: {line}</div>)})()}
               {/* モード切替 */}
               <div style={{display:'flex',gap:6,marginBottom:12}}>
                 <button onClick={()=>setExercises(exs=>exs.map(ex2=>ex2.id===ex.id?{...ex2,mode:'strength',sets:[{w:'',r:'',done:false}]}:ex2))}
@@ -797,15 +856,15 @@ export default function Home() {
               {String(Math.floor(swTotal/60000)).padStart(2,'0')}:{String(Math.floor((swTotal%60000)/1000)).padStart(2,'0')}<span style={{fontSize:26,color:'#555',letterSpacing:1}}>.{String(Math.floor((swTotal%1000)/10)).padStart(2,'0')}</span>
             </div>
             <div style={{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap',marginBottom:12}}>
-              {[{l:'+30分',v:1800},{l:'+1分',v:60},{l:'+30秒',v:30},{l:'+10秒',v:10}].map(btn=>(
-                <button key={btn.l} onClick={()=>{setSwRunning(false);setSwTotal(p=>p+btn.v*1000);setSwMs(p=>p+btn.v*1000)}}
-                  style={{padding:'7px 13px',borderRadius:20,border:'0.5px solid #404040',background:'#1e1e1e',color:'#ddd',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'",fontWeight:500}}>
+              {[{l:'1分',v:60},{l:'90秒',v:90},{l:'2分',v:120},{l:'3分',v:180},{l:'5分',v:300}].map(btn=>(
+                <button key={btn.l} onClick={()=>{setSwRunning(false);setSwTotal(btn.v*1000);setSwMs(btn.v*1000)}}
+                  style={{padding:'7px 13px',borderRadius:20,border:`0.5px solid ${swMs===btn.v*1000?'#c8ff00':'#404040'}`,background:swMs===btn.v*1000?'rgba(200,255,0,0.12)':'#1e1e1e',color:swMs===btn.v*1000?'#c8ff00':'#ddd',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'",fontWeight:500}}>
                   {btn.l}
                 </button>
               ))}
               <button onClick={()=>{setSwRunning(false);setSwTotal(0);setSwMs(0)}}
                 style={{padding:'7px 13px',borderRadius:20,border:'0.5px solid #ff444444',background:'none',color:'#ff6666',fontSize:12,cursor:'pointer',fontFamily:"'DM Sans'"}}>
-                クリア
+                リセット
               </button>
             </div>
             <div style={{display:'flex',gap:10,justifyContent:'center'}}>
@@ -858,55 +917,110 @@ export default function Home() {
             </div>
           </div>
 
+          {/* 週ナビゲーション */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+            <button onClick={()=>setWeekOffset(o=>o-1)}
+              style={{width:34,height:34,borderRadius:8,border:'0.5px solid #333',background:'#1e1e1e',color:'#aaa',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+            <div style={{fontSize:12,color:weekOffset===0?'#c8ff00':'#aaa',fontWeight:500}}>
+              {weekOffset===0?'今週':weekOffset===-1?'先週':`${-weekOffset}週前`}
+              <span style={{fontSize:10,color:'#444',marginLeft:6}}>
+                {`${weekStart.getMonth()+1}/${weekStart.getDate()}〜`}
+              </span>
+            </div>
+            <button onClick={()=>setWeekOffset(o=>Math.min(o+1,0))}
+              style={{width:34,height:34,borderRadius:8,border:'0.5px solid #333',background:'#1e1e1e',color:weekOffset===0?'#333':'#aaa',cursor:weekOffset===0?'default':'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
+          </div>
+
           {/* 重量グラフ */}
-          <div className="sec">💪 重量ボリューム (kg)</div>
+          <div className="sec">💪 {weekOffset===0?'今週':'その週'}の重量 (kg)</div>
           <div className="card" style={{marginBottom:10}}>
             {history.filter((h:any)=>h.total_volume>0).length===0
               ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>筋トレ記録がありません</div>
-              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
-                {[...history].filter((h:any)=>h.total_volume>0).slice(0,8).reverse().map((h:any,i,arr)=>{
-                  const maxV=Math.max(...arr.map((x:any)=>x.total_volume||0),1)
-                  const pct=Math.round((h.total_volume||0)/maxV*65)
-                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                    <div style={{fontSize:7,color:'#c8ff00'}}>{h.total_volume}</div>
-                    <div style={{width:'100%',background:'#c8ff00',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
-                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:8}}>
+                {weekDays.map(({key,day},i)=>{
+                  const val=weekVolumes[i]
+                  const pct=val>0?Math.max(Math.round(val/maxWeekVol*110),4):0
+                  const isToday=key===todayKey
+                  const label=val>=1000?((val/1000).toFixed(1)+'k'):val?String(val):''
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:0}}>
+                    {val>0&&<div style={{fontSize:9,color:'#c8ff00',fontWeight:600,marginBottom:3,lineHeight:1}}>{label}</div>}
+                    {val>0&&<div style={{width:'100%',background:isToday?'#c8ff00':'rgba(200,255,0,0.45)',borderRadius:'5px 5px 0 0',height:pct}}/>}
+                    <div style={{width:'100%',height:'1px',background:isToday?'rgba(200,255,0,0.25)':'#222'}}/>
+                    <div style={{fontSize:8,color:isToday?'#c8ff00':'#444',marginTop:3,lineHeight:1,fontWeight:isToday?600:400}}>{DAYS_JP[day]}</div>
                   </div>)
                 })}
               </div>}
           </div>
 
+          {/* レップスグラフ (種目別) */}
+          <div className="sec">🔢 レップス推移（種目別）</div>
+          <div className="card" style={{marginBottom:10}}>
+            {repsExNames.length===0
+              ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>筋トレ記録がありません<br/><span style={{fontSize:10,color:'#333'}}>ワークアウトを記録するとグラフが表示されます</span></div>
+              :<>
+                <div style={{display:'flex',gap:5,marginBottom:10,flexWrap:'wrap'}}>
+                  {repsExNames.map(name=>(
+                    <button key={name} onClick={()=>setSelectedRepsEx(name)}
+                      style={{padding:'4px 10px',borderRadius:20,border:'none',background:activeRepsEx===name?'#a78bfa':'#272727',color:activeRepsEx===name?'#000':'#888',fontSize:11,cursor:'pointer',fontFamily:"'DM Sans'",fontWeight:activeRepsEx===name?600:400}}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                {weekReps.every(v=>v===0)
+                  ?<div style={{textAlign:'center',padding:'0.5rem 0',color:'#555',fontSize:12}}>この種目のデータがありません</div>
+                  :<div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:8}}>
+                    {weekDays.map(({key,day},i)=>{
+                      const val=weekReps[i]
+                      const pct=val>0?Math.max(Math.round(val/maxWeekReps*110),4):0
+                      const isToday=key===todayKey
+                      return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:0}}>
+                        {val>0&&<div style={{fontSize:9,color:'#a78bfa',fontWeight:600,marginBottom:3,lineHeight:1}}>{val}</div>}
+                        {val>0&&<div style={{width:'100%',background:isToday?'#a78bfa':'rgba(167,139,250,0.45)',borderRadius:'5px 5px 0 0',height:pct}}/>}
+                        <div style={{width:'100%',height:'1px',background:isToday?'rgba(167,139,250,0.25)':'#222'}}/>
+                        <div style={{fontSize:8,color:isToday?'#a78bfa':'#444',marginTop:3,lineHeight:1,fontWeight:isToday?600:400}}>{DAYS_JP[day]}</div>
+                      </div>)
+                    })}
+                  </div>
+                }
+              </>
+            }
+          </div>
+
           {/* 距離グラフ */}
-          <div className="sec">🏃 走行距離 (km)</div>
+          <div className="sec">🏃 {weekOffset===0?'今週':'その週'}の距離 (km)</div>
           <div className="card" style={{marginBottom:10}}>
             {history.filter((h:any)=>h.total_distance>0).length===0
               ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>有酸素記録がありません</div>
-              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
-                {[...history].filter((h:any)=>h.total_distance>0).slice(0,8).reverse().map((h:any,i,arr)=>{
-                  const maxD=Math.max(...arr.map((x:any)=>x.total_distance||0),1)
-                  const pct=Math.round((h.total_distance||0)/maxD*65)
-                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                    <div style={{fontSize:7,color:'#22d3ee'}}>{parseFloat(h.total_distance).toFixed(1)}</div>
-                    <div style={{width:'100%',background:'#22d3ee',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
-                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:8}}>
+                {weekDays.map(({key,day},i)=>{
+                  const val=weekDistances[i]
+                  const pct=val>0?Math.max(Math.round(val/maxWeekDist*110),4):0
+                  const isToday=key===todayKey
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:0}}>
+                    {val>0&&<div style={{fontSize:9,color:'#22d3ee',fontWeight:600,marginBottom:3,lineHeight:1}}>{parseFloat(String(val)).toFixed(1)}</div>}
+                    {val>0&&<div style={{width:'100%',background:isToday?'#22d3ee':'rgba(34,211,238,0.45)',borderRadius:'5px 5px 0 0',height:pct}}/>}
+                    <div style={{width:'100%',height:'1px',background:isToday?'rgba(34,211,238,0.25)':'#222'}}/>
+                    <div style={{fontSize:8,color:isToday?'#22d3ee':'#444',marginTop:3,lineHeight:1,fontWeight:isToday?600:400}}>{DAYS_JP[day]}</div>
                   </div>)
                 })}
               </div>}
           </div>
 
           {/* 時間グラフ */}
-          <div className="sec">⏱ 有酸素時間 (分)</div>
+          <div className="sec">⏱ {weekOffset===0?'今週':'その週'}の有酸素時間 (分)</div>
           <div className="card" style={{marginBottom:10}}>
             {history.filter((h:any)=>h.total_time>0).length===0
               ?<div style={{textAlign:'center',padding:'0.8rem 0',color:'#555',fontSize:12}}>有酸素記録がありません</div>
-              :<div style={{display:'flex',alignItems:'flex-end',gap:3,height:65,marginBottom:5}}>
-                {[...history].filter((h:any)=>h.total_time>0).slice(0,8).reverse().map((h:any,i,arr)=>{
-                  const maxT=Math.max(...arr.map((x:any)=>x.total_time||0),1)
-                  const pct=Math.round((h.total_time||0)/maxT*65)
-                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                    <div style={{fontSize:7,color:'#fbbf24'}}>{Math.round(h.total_time)}</div>
-                    <div style={{width:'100%',background:'#fbbf24',borderRadius:'3px 3px 0 0',minHeight:3,height:pct}}/>
-                    <div style={{fontSize:7,color:'#555'}}>{String(h.date).slice(5).replace('-','/')}</div>
+              :<div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:8}}>
+                {weekDays.map(({key,day},i)=>{
+                  const val=weekTimes[i]
+                  const pct=val>0?Math.max(Math.round(val/maxWeekTime*110),4):0
+                  const isToday=key===todayKey
+                  return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:0}}>
+                    {val>0&&<div style={{fontSize:9,color:'#fbbf24',fontWeight:600,marginBottom:3,lineHeight:1}}>{Math.round(val)}</div>}
+                    {val>0&&<div style={{width:'100%',background:isToday?'#fbbf24':'rgba(251,191,36,0.45)',borderRadius:'5px 5px 0 0',height:pct}}/>}
+                    <div style={{width:'100%',height:'1px',background:isToday?'rgba(251,191,36,0.25)':'#222'}}/>
+                    <div style={{fontSize:8,color:isToday?'#fbbf24':'#444',marginTop:3,lineHeight:1,fontWeight:isToday?600:400}}>{DAYS_JP[day]}</div>
                   </div>)
                 })}
               </div>}
@@ -936,6 +1050,20 @@ export default function Home() {
         {/* ===== プロフィール ===== */}
         {tab==='profile'&&(
         <div className="page">
+          {/* サブタブ */}
+          <div style={{display:'flex',gap:6,marginBottom:14,background:'#1a1a1a',borderRadius:10,padding:4}}>
+            {(['stats','badges','friends'] as Array<'stats'|'badges'|'friends'>).map((id)=>{
+            const label = id==='stats'?'プロフィール':id==='badges'?'バッジ':'フレンド'
+            return (
+              <button key={id} onClick={()=>setProfileSubTab(id)}
+                style={{flex:1,padding:'7px 4px',borderRadius:7,border:'none',background:profileSubTab===id?'#2a2a2a':'transparent',color:profileSubTab===id?'#c8ff00':'#555',fontSize:11,fontWeight:profileSubTab===id?600:400,cursor:'pointer',fontFamily:"'DM Sans'",transition:'all 0.15s'}}>
+                {label}
+              </button>
+            )
+          })}
+          </div>
+
+          {profileSubTab==='stats'&&<>
           <div style={{textAlign:'center',padding:'12px 0 10px'}}>
             {/* アバター */}
             <div style={{position:'relative',width:72,height:72,margin:'0 auto 10px'}}>
@@ -951,7 +1079,6 @@ export default function Home() {
                 <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)uploadAvatar(f)}}/>
               </label>
             </div>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:lv.color,letterSpacing:2}}>LV.{lv.lv} {lv.name}</div>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:lv.color,letterSpacing:2}}>LV.{lv.lv} {lv.name}</div>
             <div style={{fontSize:15,color:'#fff',fontWeight:500,marginTop:4}}>{profile?.username||''}</div>
             <div style={{fontSize:10,color:'#555',marginTop:2}}>{xp} WORKOUTS</div>
@@ -1000,12 +1127,10 @@ export default function Home() {
               </div>
             ))}
           </div>
-        </div>
-        )}
+          </>}
 
-        {/* ===== バッジ ===== */}
-        {tab==='badges'&&(
-        <div className="page">
+          {/* バッジサブタブ */}
+          {profileSubTab==='badges'&&<>
           <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:10}}>
             <span style={{fontFamily:"'Bebas Neue'",fontSize:28,color:'#c8ff00'}}>{earnedBadges.length}</span>
             <span style={{fontSize:12,color:'#444'}}>/ {BADGES.length} BADGES</span>
@@ -1022,13 +1147,10 @@ export default function Home() {
               )
             })}
           </div>
-        </div>
-        )}
+          </>}
 
-        {/* ===== フレンド ===== */}
-        {tab==='friends'&&(
-        <div className="page">
-          {/* フレンド検索 */}
+          {/* フレンドサブタブ */}
+          {profileSubTab==='friends'&&<>
           <div className="sec">フレンドを追加</div>
           <div className="card" style={{marginBottom:12}}>
             <div style={{display:'flex',gap:8,marginBottom:searchResult||searchMsg?10:0}}>
@@ -1057,8 +1179,6 @@ export default function Home() {
               </div>
             )}
           </div>
-
-          {/* フレンドリクエスト */}
           {friendRequests.length>0&&(
             <>
               <div className="sec">リクエスト受信中 {friendRequests.length}件</div>
@@ -1085,8 +1205,6 @@ export default function Home() {
               </div>
             </>
           )}
-
-          {/* フレンド一覧 */}
           <div className="sec">フレンド {friends.length}人</div>
           {friends.length===0?(
             <div style={{textAlign:'center',padding:'2rem 0',color:'#555',fontSize:13}}>
@@ -1120,6 +1238,7 @@ export default function Home() {
               })}
             </div>
           )}
+          </>}
         </div>
         )}
       </div>
@@ -1132,8 +1251,6 @@ export default function Home() {
           {id:'log',label:'記録',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 4v6a6 6 0 0012 0V4M4 20h16"/></svg>},
           {id:'graph',label:'グラフ',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
           {id:'profile',label:'プロフィール',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>},
-          {id:'badges',label:'バッジ',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>},
-          {id:'friends',label:'フレンド',svg:<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>},
         ].map(n=>(
           <button key={n.id} className={`nav-btn ${tab===n.id?'on':''}`} onClick={()=>setTab(n.id)}>
             {n.svg}<span>{n.label}</span>
@@ -1253,6 +1370,5 @@ export default function Home() {
         </div>
       )}
     </div>
-    </>
   )
 }
