@@ -285,7 +285,7 @@ export default function Home() {
   const xp = history.length, lv = calcLv(xp), nl = nextLv(xp)
   const lvPct = nl ? Math.round((xp-lv.needXP)/(nl.needXP-lv.needXP)*100) : 100
   const swColor = swRunning ? '#c8ff00' : swTotal === 0 ? '#00ff87' : '#f0f0f0'
-  const repsExNames = [...new Set(exerciseSets.filter(s=>s.reps>0).map(s=>s.exercise_name))].slice(0,6)
+  const repsExNames = Array.from(new Set(exerciseSets.filter(s=>s.reps>0).map(s=>s.exercise_name))).slice(0,6)
   const activeRepsEx = selectedRepsEx || repsExNames[0] || ''
   const weekStart = new Date(todayY, todayM, todayD - now.getDay() + weekOffset * 7)
   const weekDays = Array.from({length:7}, (_,i) => {
